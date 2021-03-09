@@ -1,0 +1,28 @@
+name: PR
+on:
+  pull_request:
+    paths-ignore:
+      - '.github/workflows/**'
+
+
+
+jobs:
+  pr:
+    name: pr
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: install node v14
+      uses: actions/setup-node@v1
+      with:
+        node-version: 14
+    - run: yarn
+    - name: build
+      run: yarn workspaces foreach run build
+    - name: code-style check
+      run: yarn pretty-quick --check --pattern 'packages/*/src/**/*' --branch origin/main
+    - name: lint
+      run: yarn lint
+    - name: test
+      run: yarn test:docker
+

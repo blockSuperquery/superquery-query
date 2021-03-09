@@ -1,0 +1,84 @@
+name: "Prerelease"
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '.github/workflows/**'
+
+jobs:
+  Bump-Prerelease-Publish:
+    name: Bump-Prerelease-Publish
+    if: "!startsWith(github.event.head_commit.message, '[SKIP CI]') && !startsWith(github.event.head_commit.message, '[release]') && github.repository == 'subquery/subql'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 100
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: marceloprado/has-changed-path@v1
+        id: changed-common
+        with:
+          paths: packages/common
+
+      - uses: marceloprado/has-changed-path@v1
+        id: changed-cli
+        with:
+          paths: packages/cli
+
+      - uses: marceloprado/has-changed-path@v1
+        id: changed-types
+        with:
+          paths: packages/types
+
+      - uses: marceloprado/has-changed-path@v1
+        id: changed-node
+        with:
+          paths: packages/node
+
+      - run: yarn
+
+      - name: build
+        run: yarn workspaces foreach run build
+
+      - name: Bump common & deploy
+        if: steps.changed-common.outputs.changed == 'true'
+        working-directory: packages/common
+        run: echo "Changes exist in common" && yarn version prerelease && yarn npm publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Bump cli & deploy
+        if: steps.changed-cli.outputs.changed == 'true'
+        working-directory: packages/cli
+        run: echo "Changes exist in cli" && yarn version prerelease && yarn npm publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+
+      - name: Bump types & deploy
+        if: steps.changed-types.outputs.changed == 'true'
+        working-directory: packages/types
+        run: echo "Changes exist in types" && yarn version prerelease && yarn npm publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Bump node & deploy
+        if: steps.changed-node.outputs.changed == 'true'
+        working-directory: packages/node
+        run: echo "Changes exist in node" && yarn version prerelease && yarn npm publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit changes
+        uses: EndBug/add-and-commit@v5
+        with:
+          message: '[SKIP CI] Prerelease'
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
