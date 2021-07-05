@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { GraphQLModelsType } from '@subql/common/graphql/types';
-import { GraphQLObjectType, GraphQLOutputType, isNonNullType } from 'graphql';
-import { ModelAttributes } from 'sequelize';
+import { ModelAttributes, DataTypes } from 'sequelize';
 import { ModelAttributeColumnOptions } from 'sequelize/types/lib/model';
 
 const SEQUELIZE_TYPE_MAPPING = {
@@ -15,6 +14,7 @@ const SEQUELIZE_TYPE_MAPPING = {
   BigDecimal: 'numeric',
   Boolean: 'boolean',
   Bytes: 'bytea',
+  Json: DataTypes.JSONB,
 };
 
 export function modelsTypeToModelAttributes(
@@ -43,4 +43,8 @@ export function modelsTypeToModelAttributes(
     acc[field.name] = columnOption;
     return acc;
   }, {} as ModelAttributes<any>);
+}
+
+export function isBasicType(t: string): boolean {
+  return Object.keys(SEQUELIZE_TYPE_MAPPING).findIndex((k) => k === t) >= 0;
 }

@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2021-06-25
+### Changed
+- Update dependencies (#358)
+
+## [0.9.3] - 2021-05-04
+### Added
+- Codegen will support indexed jsonb fields. No get methods will be created for such fields in the entity class. (#291)
+
+## [0.9.2] - 2021-04-21
+### Added
+- Codegen allow query by foreign key field (#285)
+
+## [0.9.0] - 2021-04-19
+### Added
+- `@index` annotation is now supported in `graphql.schema` (#255):
+  - Can be added on any field of any entity except primary or foreign keys
+  - `@subql/node` will recognise it and create table with additional indexes to speed querying
+  -  Allow query by indexed field via `global.store` (#271)
+- `@jsonField` annotation is now supported in `graphql.schema` which allows you to store structured data JSON data in a single database field
+  - We'll automatically generate coresponding JSON interfaces when querying this data (#275)
+  - Read more about how you can use this in our [updated docs](https://doc.subquery.network/create/graphql.html#json-type)
+
+## [0.8.0] - 2021-03-11
+### Added
+- Update subquery repo path (#196)
+- codegen will create foreign key for relations: 1-1, and 1-N  (#212)
+- codegen support type Boolean (#216)
+- add subcommand validate (#219)
+
 ## [0.7.3] - 2021-02-15
 ### Changed
 - bump dependencies (#148)
@@ -36,7 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - support subcommand codegen
 - support subcommand init
 
-[Unreleased]: https://github.com/OnFinality-io/subql/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/subquery/subql/compare/v0.9.0...v0.9.2
+[0.9.0]: https://github.com/subquery/subql/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/subquery/subql/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/OnFinality-io/subql/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/OnFinality-io/subql/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/OnFinality-io/subql/compare/v0.7.0...v0.7.1

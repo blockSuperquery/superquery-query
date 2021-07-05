@@ -4,9 +4,11 @@
 import {Module, OnModuleDestroy, OnModuleInit} from '@nestjs/common';
 import {HttpAdapterHost} from '@nestjs/core';
 import {ApolloServer} from 'apollo-server-express';
+import ExpressPinoLogger from 'express-pino-logger';
 import {Pool} from 'pg';
 import {getPostGraphileBuilder} from 'postgraphile-core';
 import {Config} from '../configure';
+import {getLogger} from '../utils/logger';
 import {plugins} from './plugins';
 import {ProjectService} from './project.service';
 
@@ -42,6 +44,7 @@ export class GraphqlModule implements OnModuleInit, OnModuleDestroy {
     const builder = await getPostGraphileBuilder(this.pgPool, [dbSchema], {
       replaceAllPlugins: plugins,
       subscriptions: true,
+      dynamicJson: true,
     });
 
     const schema = builder.buildSchema();
@@ -59,6 +62,14 @@ export class GraphqlModule implements OnModuleInit, OnModuleDestroy {
         path: '/subscription',
       },
     });
+    app.use(
+      ExpressPinoLogger({
+        logger: getLogger('express'),
+        autoLogging: {
+          ignorePaths: ['/.well-known/apollo/server-health'],
+        },
+      })
+    );
     server.applyMiddleware({
       app,
       path: '/',

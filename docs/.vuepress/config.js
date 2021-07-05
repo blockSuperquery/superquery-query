@@ -1,45 +1,85 @@
 module.exports = {
-
-    locales: {
-        '/': {
-            lang: 'English',
-            title: 'SubQuery Guide',
-            description: 'SubQuery is a open-source tool to provide a complete process and query data solution to every substrate project and will become core infrastructure for the Polkadot ecosystem.'
-        },
+  locales: {
+    '/': {
+      lang: 'English',
+      title: 'SubQuery Guide',
+      description: 'SubQuery is a open-source tool to provide a complete process and query data solution to every substrate project and will become core infrastructure for the Polkadot ecosystem.'
     },
-
-    themeConfig: {
-        logo:'/assets/img/logo.png',
-        logoLink: 'https://subquery.network',
-        lastUpdated: 'Last Updated',
-        locales: {
-            '/': {
-                selectText: 'Languages',
-                label: 'English',
-                ariaLabel: 'Languages',
-                algolia: {},
-                nav: [
-                    { text: 'SubQuery', link: 'https://www.subquery.network/',target:'_self', rel:''},
-                    { text: 'Guide', link: '/' },
-                    { text: 'OnFinality', link: 'https://onfinality.io/', target:'_self', rel:''},
-                ],
-                sidebar: {
-                    '/': [
-                        '',
-                        'quickstart',
-                        'directory_structure',
-                        'define_a_subquery' ,
-                        'indexing_query',
-                        'sandbox'
-
-                    ],
-                }
-
-            },
-        },
-        sidebarDepth: 2
-    }
-
+  },
+  themeConfig: {
+    logo: '/assets/img/logo.png',
+    logoLink: 'https://subquery.network',
+    lastUpdated: true,
+    nav: [
+      { text: 'Explorer', link: 'https://explorer.subquery.network/', target: '_blank', rel: '' },
+      { text: 'Projects', link: 'https://project.subquery.network/', target: '_blank', rel: '' },
+      { text: 'Documentation', link: '/' },
+      { text: 'GitHub', link: 'https://github.com/subquery/subql', target: '_blank', rel: '' },
+    ],
+    sidebarDepth: 2,
+    sidebar: [
+      {
+        title: 'Welcome to SubQuery',
+        path: '/',
+      },
+      {
+        title: 'Quick Start Guide',
+        path: '/quickstart/quickstart',
+        children: [
+          '/quickstart/quickstart.md',
+          '/quickstart/helloworld-localhost.md',
+          '/quickstart/understanding-helloworld.md',
+        ]
+      },
+      {
+        title: 'Create a Project',
+        path: '/create/introduction',
+        children: [
+          '/create/introduction.md',
+          '/create/manifest.md',
+          '/create/graphql.md',
+          '/create/mapping.md',
+        ]
+      },
+      {
+        title: 'Run a Project',
+        path: '/run/run',
+        children: [
+          '/run/run.md',
+          '/run/sandbox.md',
+        ]
+      },
+      {
+        title: 'Publish a Project',
+        path: '/publish/publish',
+        children: [
+          '/publish/publish.md',
+          '/publish/upgrade.md',
+          '/publish/connect.md',
+        ]
+      },
+      {
+        title: 'Query your Data',
+        path: '/query/query',
+        children: [
+          '/query/query.md',
+          '/query/graphql.md'
+        ]
+      }
+    ],
+  },
+  plugins: [
+    ['fulltext-search'],
+    [
+      '@vuepress/plugin-google-analytics',
+      {
+        id: 'G-MY90N76MNK',
+      },
+    ],
+  ],
+  markdown: {
+    extractHeaders: ['h2','h3','h4']
+  }
 }
 
 

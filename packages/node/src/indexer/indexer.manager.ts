@@ -5,12 +5,11 @@ import path from 'path';
 import { Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ApiPromise } from '@polkadot/api';
-import { buildSchema, SubqlKind, getAllEntitiesRelations } from '@subql/common';
+import { buildSchema, getAllEntitiesRelations, SubqlKind } from '@subql/common';
 import { QueryTypes, Sequelize } from 'sequelize';
 import { NodeConfig } from '../configure/NodeConfig';
 import { SubqueryProject } from '../configure/project.model';
 import { SubqueryModel, SubqueryRepo } from '../entities';
-import { modelsTypeToModelAttributes } from '../utils/graphql';
 import { getLogger } from '../utils/logger';
 import * as SubstrateUtil from '../utils/substrate';
 import { ApiService } from './api.service';
@@ -54,10 +53,20 @@ export class IndexerManager {
       const inject = block.specVersion !== this.prevSpecVersion;
       await this.apiService.setBlockhash(block.block.hash, inject);
 
-      for (const ds of this.project.dataSources) {
-        if (ds.startBlock > block.block.header.number.toNumber()) {
-          continue;
-        }
+      const dataSources = this.project.dataSources.filter(
+        (ds) =>
+          ds.startBlock <= block.block.header.number.toNumber() &&
+          (!ds.filter?.specName ||
+            ds.filter.specName === this.api.runtimeVersion.specName.toString()),
+      );
+      if (dataSources.length === 0) {
+        logger.error(
+          `Did not find any dataSource match with network specName ${this.api.runtimeVersion.specName}`,
+        );
+        process.exit(1);
+      }
+
+      for (const ds of dataSources) {
         if (ds.kind === SubqlKind.Runtime) {
           for (const handler of ds.mapping.handlers) {
             switch (handler.kind) {
@@ -92,6 +101,7 @@ export class IndexerManager {
         }
         // TODO: support Ink! and EVM
       }
+
       this.subqueryState.nextBlockHeight =
         block.block.header.number.toNumber() + 1;
       await this.subqueryState.save();
@@ -102,6 +112,10 @@ export class IndexerManager {
       throw e;
     }
     await tx.commit();
+    this.eventEmitter.emit(IndexerEvent.BlockLastProcessed, {
+      height: block.block.header.number.toNumber(),
+      timestamp: Date.now(),
+    });
   }
 
   async start(): Promise<void> {
@@ -118,6 +132,7 @@ export class IndexerManager {
         // FIXME: retry before exit
         process.exit(1);
       });
+
     this.fetchService.register((block) => this.indexBlock(block));
   }
 
@@ -131,8 +146,24 @@ export class IndexerManager {
       },
       this.nodeConfig,
     );
+  }
 
-    this.vm.on('console.log', (data) => getLogger('sandbox').info(data));
+  private getStartBlockFromDataSources() {
+    const startBlocksList = this.project.dataSources
+      .filter(
+        (ds) =>
+          !ds.filter?.specName ||
+          ds.filter.specName === this.api.runtimeVersion.specName.toString(),
+      )
+      .map((item) => item.startBlock ?? 1);
+    if (startBlocksList.length === 0) {
+      logger.error(
+        `Failed to find a valid datasource, Please check your endpoint if specName filter is used.`,
+      );
+      process.exit(1);
+    } else {
+      return Math.min(...startBlocksList);
+    }
   }
 
   private async ensureProject(name: string): Promise<SubqueryModel> {
@@ -153,13 +184,12 @@ export class IndexerManager {
           await this.sequelize.createSchema(projectSchema, undefined);
         }
       }
+
       project = await this.subqueryRepo.create({
         name,
         dbSchema: projectSchema,
         hash: '0x',
-        nextBlockHeight: Math.min(
-          ...this.project.dataSources.map((item) => item.startBlock ?? 1),
-        ),
+        nextBlockHeight: this.getStartBlockFromDataSources(),
         network: chain,
         networkGenesis: genesisHash,
       });
@@ -183,13 +213,8 @@ export class IndexerManager {
     const graphqlSchema = buildSchema(
       path.join(this.project.path, this.project.schema),
     );
-    const models = getAllEntitiesRelations(graphqlSchema).models.map(
-      (entity) => {
-        const modelAttributes = modelsTypeToModelAttributes(entity);
-        return { name: entity.name, attributes: modelAttributes };
-      },
-    );
-    await this.storeService.syncSchema(models, schema);
+    const modelsRelations = getAllEntitiesRelations(graphqlSchema);
+    await this.storeService.init(modelsRelations, schema);
   }
 
   private async nextSubquerySchemaSuffix(): Promise<number> {

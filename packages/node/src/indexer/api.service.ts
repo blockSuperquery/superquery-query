@@ -7,11 +7,15 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import {
   ApiInterfaceRx,
   ApiOptions,
+  DecoratedRpc,
   QueryableStorageEntry,
   QueryableStorageMultiArg,
+  RpcMethodResult,
 } from '@polkadot/api/types';
+import { RpcInterface } from '@polkadot/rpc-core/types';
+import { StorageKey } from '@polkadot/types';
 import { BlockHash } from '@polkadot/types/interfaces';
-import { AnyTuple } from '@polkadot/types/types';
+import { AnyFunction, AnyTuple, Registry } from '@polkadot/types/types';
 import { assign, pick } from 'lodash';
 import { combineLatest } from 'rxjs';
 import { SubqueryProject } from '../configure/project.model';
@@ -106,12 +110,19 @@ export class ApiService implements OnApplicationShutdown {
     return this.patchedApi;
   }
 
-  private patchApi(): void {
+  private patchApi(registry?: Registry): void {
+    if (registry) {
+      Object.defineProperty(this.patchedApi, 'registry', {
+        value: registry,
+        writable: false,
+        configurable: true,
+      });
+    }
     this.patchApiQuery(this.patchedApi);
     this.patchApiTx(this.patchedApi);
-    this.patchApiRpc(this.patchedApi);
     this.patchApiQueryMulti(this.patchedApi);
     this.patchDerive(this.patchedApi);
+    this.patchApiRpc(this.patchedApi);
     (this.patchedApi as any).isPatched = true;
   }
 
@@ -123,7 +134,7 @@ export class ApiService implements OnApplicationShutdown {
     if (inject) {
       const { metadata, registry } = await this.api.getBlockRegistry(blockHash);
       this.patchedApi.injectMetadata(metadata, true, registry);
-      this.patchApi();
+      this.patchApi(registry);
     }
   }
 
@@ -132,10 +143,7 @@ export class ApiService implements OnApplicationShutdown {
     atMethod: string,
   ) {
     return (...args: any[]) => {
-      const expandedArgs = original.creator.meta.type.isDoubleMap
-        ? args[0]
-        : args;
-      return original[atMethod](this.currentBlockHash, ...expandedArgs);
+      return original[atMethod](this.currentBlockHash, ...args);
     };
   }
 
@@ -168,13 +176,60 @@ export class ApiService implements OnApplicationShutdown {
         newEntryFunc as QueryableStorageEntry<'rxjs', AnyTuple>,
       );
     }
-    newEntryFunc.multi = (async (keys: any[]) => {
-      return Promise.all(keys.map(async (key) => newEntryFunc(key)));
+    newEntryFunc.multi = ((args: any[]) => {
+      const keys = args.map((arg) => {
+        const key = new StorageKey(
+          this.api.registry,
+          original.key(
+            ...(original.creator.meta.type.isDoubleMap ? arg : [arg]),
+          ),
+        );
+        key.setMeta(original.creator.meta);
+        return key;
+      });
+      if (apiType === 'promise') {
+        return this.api.rpc.state.queryStorageAt(keys, this.currentBlockHash);
+      } else {
+        return this.api.rx.rpc.state.queryStorageAt(
+          keys,
+          this.currentBlockHash,
+        );
+      }
     }) as any;
     newEntryFunc.range = NOT_SUPPORT('range');
     newEntryFunc.size = this.replaceToAtVersion(original, 'sizeAt');
     newEntryFunc.sizeAt = NOT_SUPPORT('sizeAt');
     return newEntryFunc;
+  }
+
+  private redecorateRpcFunction<T extends 'promise' | 'rxjs'>(
+    original: RpcMethodResult<T, AnyFunction>,
+    apiType: T,
+  ): RpcMethodResult<T, AnyFunction> {
+    if (original.meta.params) {
+      const hashIndex = original.meta.params.findIndex(
+        ({ isHistoric, name }) => isHistoric,
+      );
+      if (hashIndex > -1) {
+        const ret = ((...args: any[]) => {
+          const argsClone = [...args];
+          argsClone[hashIndex] = this.currentBlockHash;
+          return original(...argsClone);
+        }) as RpcMethodResult<T, AnyFunction>;
+        ret.json = NOT_SUPPORT('api.rpc.*.*.json');
+        ret.raw = NOT_SUPPORT('api.rpc.*.*.raw');
+        ret.meta = original.meta;
+        return ret;
+      }
+    }
+    const ret = (NOT_SUPPORT('api.rpc.*.*') as unknown) as RpcMethodResult<
+      T,
+      AnyFunction
+    >;
+    ret.json = NOT_SUPPORT('api.rpc.*.*.json');
+    ret.raw = NOT_SUPPORT('api.rpc.*.*.raw');
+    ret.meta = original.meta;
+    return ret;
   }
 
   private patchPromiseStorageEntryMulti(
@@ -254,52 +309,66 @@ export class ApiService implements OnApplicationShutdown {
   }
 
   private patchApiRpc(api: ApiPromise): void {
-    (api as any)._rpc = Object.entries(api.rpc).reduce(
-      (acc, [module, rpcMethods]) => {
-        acc[module] = Object.entries(rpcMethods).reduce((accInner, [name]) => {
-          accInner[name] = NOT_SUPPORT('api.rpc.*');
+    (api as any)._rpc = Object.entries(
+      api.rpc as DecoratedRpc<'promise', RpcInterface>,
+    ).reduce((acc, [module, rpcMethods]) => {
+      acc[module] = Object.entries(rpcMethods).reduce(
+        (accInner, [name, rpcPromiseResult]) => {
+          accInner[name] = this.redecorateRpcFunction(
+            rpcPromiseResult,
+            'promise',
+          );
           return accInner;
-        }, {});
-        return acc;
-      },
-      {},
-    );
+        },
+        {},
+      );
+      return acc;
+    }, {});
     (api as any)._rx.rpc = Object.entries(
       (api as any)._rx.rpc as ApiInterfaceRx['rpc'],
     ).reduce((acc, [module, rpcMethods]) => {
-      acc[module] = Object.entries(rpcMethods).reduce((accInner, [name]) => {
-        accInner[name] = NOT_SUPPORT('api.rpc.*');
-        return accInner;
-      }, {});
+      acc[module] = Object.entries(rpcMethods).reduce(
+        (accInner, [name, rpcRxResult]) => {
+          accInner[name] = this.redecorateRpcFunction(rpcRxResult, 'rxjs');
+          return accInner;
+        },
+        {},
+      );
       return acc;
     }, {});
   }
 
+  private getKeysFromCalls(
+    api: ApiPromise,
+    calls: QueryableStorageMultiArg<'promise' | 'rxjs'>[],
+  ): StorageKey[] {
+    return calls.map((callMultiArg) => {
+      if (callMultiArg instanceof Array) {
+        const [storageFunc, ...args] = callMultiArg;
+        const key = new StorageKey(api.registry, storageFunc.key(...args));
+        key.setMeta(storageFunc.creator.meta);
+        return key;
+      } else {
+        const key = new StorageKey(api.registry, callMultiArg.key());
+        key.setMeta(callMultiArg.creator.meta);
+        return key;
+      }
+    });
+  }
+
   private patchApiQueryMulti(api: ApiPromise): void {
-    (api as any)._queryMulti = async (
+    (api as any)._queryMulti = (
       calls: QueryableStorageMultiArg<'promise'>[],
-    ) =>
-      Promise.all(
-        calls.map(async (callMultiArg) => {
-          if (callMultiArg instanceof Array) {
-            const [storageFunc, ...args] = callMultiArg;
-            return storageFunc(...args);
-          } else {
-            return callMultiArg();
-          }
-        }),
-      );
-    (api as any)._rx.queryMulti = (calls: QueryableStorageMultiArg<'rxjs'>[]) =>
-      combineLatest(
-        calls.map((callMultiArg) => {
-          if (callMultiArg instanceof Array) {
-            const [storageFunc, ...args] = callMultiArg;
-            return storageFunc(...args);
-          } else {
-            return callMultiArg();
-          }
-        }),
-      );
+    ) => {
+      const keys = this.getKeysFromCalls(api, calls);
+      return this.api.rpc.state.queryStorageAt(keys, this.currentBlockHash);
+    };
+    (api as any)._rx.queryMulti = (
+      calls: QueryableStorageMultiArg<'rxjs'>[],
+    ) => {
+      const keys = this.getKeysFromCalls(api, calls);
+      return this.api.rx.rpc.state.queryStorageAt(keys, this.currentBlockHash);
+    };
   }
 
   private patchDerive(api: ApiPromise): void {

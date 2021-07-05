@@ -4,6 +4,7 @@
 import {RegistryTypes, RegisteredTypes, OverrideModuleType, OverrideBundleType} from '@polkadot/types/types';
 import {plainToClass, Transform, Type} from 'class-transformer';
 import {
+  Allow,
   ArrayMaxSize,
   IsArray,
   IsBoolean,
@@ -20,6 +21,7 @@ import {
   SubqlBlockFilter,
   SubqlCallFilter,
   SubqlEventFilter,
+  SubqlNetworkFilter,
   SubqlHandler,
   SubqlMapping,
   SubqlRuntimeDatasource,
@@ -28,6 +30,9 @@ import {
 export class ProjectNetwork implements RegisteredTypes {
   @IsString()
   endpoint: string;
+  @IsString()
+  @IsOptional()
+  dictionary?: string;
   @IsObject()
   @IsOptional()
   types?: RegistryTypes;
@@ -46,6 +51,8 @@ export class ProjectNetwork implements RegisteredTypes {
 }
 
 export class ProjectManifestImpl implements ProjectManifest {
+  @Allow()
+  definitions: object;
   @IsString()
   description: string;
   @ValidateNested()
@@ -78,6 +85,11 @@ export class EventFilter extends BlockFilter implements SubqlEventFilter {
   @IsOptional()
   @IsString()
   method?: string;
+}
+
+export class NetworkFilter implements SubqlNetworkFilter {
+  @IsString()
+  specName: string;
 }
 
 export class CallFilter extends EventFilter implements SubqlCallFilter {
@@ -150,4 +162,8 @@ export class RuntimeDataSource implements SubqlRuntimeDatasource {
   @IsOptional()
   @IsInt()
   startBlock?: number;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NetworkFilter)
+  filter?: SubqlNetworkFilter;
 }

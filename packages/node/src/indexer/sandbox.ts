@@ -4,11 +4,12 @@
 import fs from 'fs';
 import path from 'path';
 import { ApiPromise } from '@polkadot/api';
+import { levelFilter } from '@subql/common';
 import { Store } from '@subql/types';
+import { NodeVM, NodeVMOptions, VMScript } from '@subql/x-vm2';
 import { merge } from 'lodash';
-import { NodeVM, NodeVMOptions, VMScript } from 'vm2';
 import { NodeConfig } from '../configure/NodeConfig';
-import { levelFilter } from '../utils/logger';
+import { getLogger } from '../utils/logger';
 import { timeout } from '../utils/promise';
 
 export interface SandboxOption {
@@ -22,11 +23,12 @@ const DEFAULT_OPTION: NodeVMOptions = {
   wasm: false,
   sandbox: {},
   require: {
-    builtin: ['assert'],
-    external: ['tslib'],
+    builtin: ['assert', 'buffer', 'crypto', 'util', 'path'],
+    external: true,
     context: 'sandbox',
   },
   wrapper: 'commonjs',
+  sourceExtensions: ['js', 'cjs'],
 };
 
 function getProjectEntry(root: string): string {
@@ -45,6 +47,8 @@ function getProjectEntry(root: string): string {
   }
 }
 
+const logger = getLogger('sandbox');
+
 export class IndexerSandbox extends NodeVM {
   private option: SandboxOption;
   private script: VMScript;
@@ -57,6 +61,9 @@ export class IndexerSandbox extends NodeVM {
     const vmOption: NodeVMOptions = merge({}, DEFAULT_OPTION, {
       require: {
         root,
+        resolve: (moduleName) => {
+          return require.resolve(moduleName, { paths: [root] });
+        },
       },
     });
     super(vmOption);
@@ -92,5 +99,6 @@ export class IndexerSandbox extends NodeVM {
   private injectGlobals({ api, store }: SandboxOption) {
     this.freeze(store, 'store');
     this.freeze(api, 'api');
+    this.freeze(logger, 'logger');
   }
 }

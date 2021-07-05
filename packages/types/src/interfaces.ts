@@ -9,6 +9,8 @@ export interface Entity {
 
 export interface Store {
   get(entity: string, id: string): Promise<Entity | null>;
+  getByField(entity: string, field: string, value): Promise<Entity[]>;
+  getOneByField(entity: string, field: string, value): Promise<Entity | null>;
   set(entity: string, id: string, data: Entity): Promise<void>;
   remove(entity: string, id: string): Promise<void>;
 }
@@ -17,6 +19,7 @@ export interface SubstrateBlock extends SignedBlock {
   // parent block's spec version, can be used to decide the correct metadata that should be used for this block.
   specVersion: number;
   timestamp: Date;
+  events: EventRecord[];
 }
 
 export interface SubstrateExtrinsic {

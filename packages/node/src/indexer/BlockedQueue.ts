@@ -15,6 +15,10 @@ export class BlockedQueue<T> {
     return this._queue.length;
   }
 
+  get freeSize(): number {
+    return this._maxSize - this._queue.length;
+  }
+
   put(item: T): void {
     if (this._queue.length >= this._maxSize) {
       throw new Error('BlockedQueue exceed max size');
@@ -22,10 +26,31 @@ export class BlockedQueue<T> {
     this._queue.push(item);
   }
 
+  putAll(items: T[]): void {
+    if (this._queue.length + items.length > this._maxSize) {
+      throw new Error('BlockedQueue exceed max size');
+    }
+    this._queue.push(...items);
+  }
+
   async take(): Promise<T> {
     while (!this.size) {
       await delay(0.1);
     }
     return this._queue.shift();
+  }
+  async takeAll(max?: number): Promise<T[]> {
+    while (!this.size) {
+      await delay(0.1);
+    }
+    let result;
+    if (max) {
+      result = this._queue.slice(0, max);
+      this._queue = this._queue.slice(max);
+    } else {
+      result = this._queue;
+      this._queue = [];
+    }
+    return result;
   }
 }

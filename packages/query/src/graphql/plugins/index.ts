@@ -20,7 +20,6 @@ import PgTypesPlugin from 'graphile-build-pg/node8plus/plugins/PgTypesPlugin';
 import PgTablesPlugin from 'graphile-build-pg/node8plus/plugins/PgTablesPlugin';
 import PgConnectionArgOrderBy from 'graphile-build-pg/node8plus/plugins/PgConnectionArgOrderBy';
 import PgConnectionArgOrderByDefaultValue from 'graphile-build-pg/node8plus/plugins/PgConnectionArgOrderByDefaultValue';
-import PgConnectionArgCondition from 'graphile-build-pg/node8plus/plugins/PgConnectionArgCondition';
 import PgConditionComputedColumnPlugin from 'graphile-build-pg/node8plus/plugins/PgConditionComputedColumnPlugin';
 import PgAllRows from 'graphile-build-pg/node8plus/plugins/PgAllRows';
 import PgColumnsPlugin from 'graphile-build-pg/node8plus/plugins/PgColumnsPlugin';
@@ -42,6 +41,9 @@ import PgConnectionTotalCount from 'graphile-build-pg/node8plus/plugins/PgConnec
 
 import PgSimplifyInflectorPlugin from '@graphile-contrib/pg-simplify-inflector';
 import PgManyToManyPlugin from '@graphile-contrib/pg-many-to-many';
+import ConnectionFilterPlugin from 'postgraphile-plugin-connection-filter';
+import {argv} from '../../yargs';
+import {GetMetadataPlugin} from './GetMetadataPlugin';
 
 // custom plugins
 import PgConnectionArgFirstLastBeforeAfter from './PgConnectionArgFirstLastBeforeAfter';
@@ -71,7 +73,6 @@ export const pgDefaultPlugins = [
   PgConnectionArgFirstLastBeforeAfter,
   PgConnectionArgOrderBy,
   PgConnectionArgOrderByDefaultValue,
-  PgConnectionArgCondition,
   PgConditionComputedColumnPlugin,
   PgAllRows,
   PgColumnsPlugin,
@@ -93,7 +94,14 @@ export const pgDefaultPlugins = [
   PgConnectionTotalCount,
 ];
 
-export const plugins = [...defaultPlugins, ...pgDefaultPlugins, PgSimplifyInflectorPlugin, PgManyToManyPlugin];
+export const plugins = [
+  ...defaultPlugins,
+  ...pgDefaultPlugins,
+  PgSimplifyInflectorPlugin,
+  PgManyToManyPlugin,
+  ConnectionFilterPlugin,
+];
 
-// todo
-// adv filter plugin: https://github.com/graphile-contrib/postgraphile-plugin-connection-filter
+if (argv(`indexer`)) {
+  plugins.push(GetMetadataPlugin);
+}

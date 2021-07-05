@@ -6,6 +6,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.17.2] - 2021-07-01
+Upgrade priority: High.
+### Fixed
+- fix get runtimeVersion failed when fetch service initialization (#367)
+- set useDictionary to false when one of the event/extrinsic filters are not provided (#367)
+
+## [0.17.1] - 2021-06-29
+Upgrade priority: High.
+### Fixed
+- Fix an edge case for dictionary query, add blocknumber max range to speed up dictionary (#365)
+
+## [0.17.0] - 2021-06-25
+### Added
+- Add an external dictionary feature to massively improve indexing speed.
+  - Enable by `--network-dictionary=<dictionary_HTTP_url>` or in `project.yaml` - [read more](https://doc.subquery.network/run/run.html#using-a-dictionary) (#342)
+  - Add dictionary service to fetch dictionary from external GraphQL API (#342)
+  - Add additional block number buffer in fetch service to handle incoming dictionary data (#342)
+### Changed
+- replace vm2 with @subql/x-vm2 (#358)
+- Update other dependencies (#358)
+
+## [0.16.2] - 2021-06-28
+### Changed
+- Bump polkadot/api to 4.16.2 (#363)
+
+## [0.16.1] - 2021-06-22
+### Added
+- Add arg for enable/disable timestamp created_at and updated_at though `--timestamp-field` (#352)
+
+## [0.16.0] - 2021-06-22
+### Changed
+- metadata expose last processed block (#327)
+- Remove created_at and updated_at from table (#343)
+- Bump polkadot/api to 4.15.1 (#350)
+
+## [0.15.1] - 2021-05-27
+### Changed
+- Bump polkadot/api to 4.11.2
+
+## [0.15.0] - 2021-05-24
+### Changed
+- Bump polkadot/api to 4.11.1
+
+### Fixed
+- Skip fetch finalized block until API is ready.
+- Fix indexes detection
+
+## [0.14.0] - 2021-05-19
+### Fixed
+- Use pull instead of subscribe to get new block height. This solves issues where the subscription stalls and SubQuery reports an incorrect block height.
+  
+### Changed
+- Not all `api.rpc` are banned now, historical RPC methods can be called. See the docs [link](https://doc.subquery.network/create/mapping.html#rpc-calls) (#304)
+- Bump polkadot/api dependency (#310)
+- Replace vm2 with fork to support lib like `@polkadot/*` that uses esm as default (#311)
+
+## [0.13.0] - 2021-05-06
+- Bump release version due to recent major updates, also need publish new release to npm.
+
+## [0.12.3] - 2021-05-04
+### Added
+- Automatically verifies that a model's indexed fields are supported by extracting indexed fields from the database (#289)
+- [Experimental Feature] We're removed the restrictions on using third party CommonJS libraries in your SubQuery project sandbox - please read more about this in our [updated documentation](https://doc.subquery.network/create/mapping.html##modules-and-libraries) (#292)
+- Support for more NodeJS modules (`buffer`, `crypto`, `util`, `events`, and `path`) (#294)
+
+## [0.12.2] - 2021-04-21
+### Added
+- Enforce index on foreign key field (#285)
+
+### Fixed
+- Improve logs for db sync, catch error and exit (#283)
+
+## [0.12.0] - 2021-04-20
+### Fixed
+- Bump dependencies for logger
+- Fix query for double map storage (#269)
+
+### Added
+- Support network filter for dataSources (#247)
+- Expose events in SubstrateBlock (#256)
+- api.findCall and api.findError will use current block's metadata (#251)
+- Inject global variable logger in sandbox and depricated console.log in subquery project, use logger instead. (#259)
+- Create indexes on the fields with @index and allow querying by indexed field (#271)
+- Create jsonb column for fields marked as jsonField in schema.graphql (#275)
+- Bump @polkadot/api version to v4.6.2
+
+## [0.11.0] - 2021-03-25
+### Fixed
+- Fix benchmark output format issues (#235)
+- Only warning when user set start block to number smaller than 1. (#239)
+
+### Added
+- Support entity relations (#132)
+- Refactor api.query...multi(),  api.queryMulti() to use rpc.queryStorageAt() (#244)
+
+## [0.10.2] - 2021-03-11
+### Added
+- refactor logger to @subql/common (#220)
+- Bump polkadot/js version to v4.0.3 which shall fix a chain data decoding issue (#222)
+
 ## [0.10.1] - 2021-03-03
 ### Fixed
 - use parent's specVersion to decide if metadata need to be injected (#211)
@@ -117,7 +218,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - bump @polkadot/api to 3.1.1
 
-[Unreleased]: https://github.com/subquery/subql/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/v0.12.2...HEAD
+[0.12.2]: https://github.com/subquery/subql/compare/v0.12.0...v0.12.2
+[0.12.0]: https://github.com/subquery/subql/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/subquery/subql/compare/v0.10.2...v0.11.0
+[0.10.2]: https://github.com/subquery/subql/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/subquery/subql/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/subquery/subql/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/subquery/subql/compare/v0.9.1...v0.9.2

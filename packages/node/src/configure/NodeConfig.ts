@@ -20,8 +20,12 @@ export interface IConfig {
   readonly debug: boolean;
   readonly preferRange: boolean;
   readonly networkEndpoint?: string;
+  readonly networkDictionary?: string;
   readonly outputFmt?: 'json';
   readonly logLevel?: LevelWithSilent;
+  readonly queryLimit: number;
+  readonly indexCountLimit: number;
+  readonly timestampField: boolean;
 }
 
 export type MinConfig = Partial<Omit<IConfig, 'subqueryName' | 'subquery'>> &
@@ -33,6 +37,9 @@ const DEFAULT_CONFIG = {
   timeout: 20,
   preferRange: false,
   debug: false,
+  queryLimit: 100,
+  indexCountLimit: 10,
+  timestampField: true,
 };
 
 export class NodeConfig implements IConfig {
@@ -84,6 +91,10 @@ export class NodeConfig implements IConfig {
     return this._config.batchSize;
   }
 
+  get networkDictionary(): string | undefined {
+    return this._config.networkDictionary;
+  }
+
   get timeout(): number {
     return this._config.timeout;
   }
@@ -106,6 +117,18 @@ export class NodeConfig implements IConfig {
 
   get logLevel(): LevelWithSilent {
     return this.debug ? 'debug' : this._config.logLevel;
+  }
+
+  get queryLimit(): number {
+    return this._config.queryLimit;
+  }
+
+  get indexCountLimit(): number {
+    return this._config.indexCountLimit;
+  }
+
+  get timestampField(): boolean {
+    return this._config.timestampField;
   }
 
   merge(config: Partial<IConfig>): this {

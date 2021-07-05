@@ -26,11 +26,13 @@ import { BlockContent } from '../indexer/types';
 
 export function wrapBlock(
   signedBlock: SignedBlock,
+  events: EventRecord[],
   specVersion?: number,
 ): SubstrateBlock {
   return merge(signedBlock, {
     timestamp: getTimestamp(signedBlock),
     specVersion: specVersion,
+    events,
   });
 }
 
@@ -191,7 +193,7 @@ export async function fetchBlocks(
       ? overallSpecVer
       : runtimeVersions[idx].specVersion.toNumber();
 
-    const wrappedBlock = wrapBlock(block, parentSpecVersion);
+    const wrappedBlock = wrapBlock(block, events.toArray(), parentSpecVersion);
     const wrappedExtrinsics = wrapExtrinsics(wrappedBlock, events);
     const wrappedEvents = wrapEvents(wrappedExtrinsics, events, wrappedBlock);
     return {
@@ -225,6 +227,7 @@ export async function fetchBlocksViaRangeQuery(
 
     const wrappedBlock = wrapBlock(
       block,
+      events,
       runtimeUpgrade.unwrap()?.specVersion.toNumber(),
     );
     const wrappedExtrinsics = wrapExtrinsics(wrappedBlock, events);
@@ -250,6 +253,18 @@ export async function fetchBlocksRange(
   );
 }
 
+export async function fetchBlocksArray(
+  api: ApiPromise,
+  blockArray: number[],
+): Promise<SignedBlock[]> {
+  return Promise.all(
+    blockArray.map(async (height) => {
+      const blockHash = await api.rpc.chain.getBlockHash(height);
+      return api.rpc.chain.getBlock(blockHash);
+    }),
+  );
+}
+
 export async function fetchEventsRange(
   api: ApiPromise,
   hashs: BlockHash[],
@@ -264,4 +279,35 @@ export async function fetchRuntimeVersionRange(
   return Promise.all(
     hashs.map((hash) => api.rpc.state.getRuntimeVersion(hash)),
   );
+}
+
+export async function fetchBlocksBatches(
+  api: ApiPromise,
+  blockArray,
+  overallSpecVer?: number,
+  // specVersionMap?: number[],
+): Promise<BlockContent[]> {
+  const blocks = await fetchBlocksArray(api, blockArray);
+  const blockHashs = blocks.map((b) => b.block.header.hash);
+  const parentBlockHashs = blocks.map((b) => b.block.header.parentHash);
+  const [blockEvents, runtimeVersions] = await Promise.all([
+    fetchEventsRange(api, blockHashs),
+    overallSpecVer
+      ? undefined
+      : fetchRuntimeVersionRange(api, parentBlockHashs),
+  ]);
+  return blocks.map((block, idx) => {
+    const events = blockEvents[idx];
+    const parentSpecVersion = overallSpecVer
+      ? overallSpecVer
+      : runtimeVersions[idx].specVersion.toNumber();
+    const wrappedBlock = wrapBlock(block, events.toArray(), parentSpecVersion);
+    const wrappedExtrinsics = wrapExtrinsics(wrappedBlock, events);
+    const wrappedEvents = wrapEvents(wrappedExtrinsics, events, wrappedBlock);
+    return {
+      block: wrappedBlock,
+      extrinsics: wrappedExtrinsics,
+      events: wrappedEvents,
+    };
+  });
 }

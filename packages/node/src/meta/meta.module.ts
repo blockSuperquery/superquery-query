@@ -7,12 +7,14 @@ import {
   PrometheusModule,
 } from '@willsoto/nestjs-prometheus';
 import { MetricEventListener } from './event.listener';
+import { HealthController } from './health.controller';
+import { HealthService } from './health.service';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
 
 @Module({
   imports: [PrometheusModule.register()],
-  controllers: [MetaController],
+  controllers: [MetaController, HealthController],
   providers: [
     MetricEventListener,
     makeGaugeProvider({
@@ -28,6 +30,10 @@ import { MetaService } from './meta.service';
       help: 'The current processing block height',
     }),
     makeGaugeProvider({
+      name: 'subql_indexer_processed_block_height',
+      help: 'The last processed block height',
+    }),
+    makeGaugeProvider({
       name: 'subql_indexer_target_block_height',
       help: 'The latest finalized block height',
     }),
@@ -35,7 +41,12 @@ import { MetaService } from './meta.service';
       name: 'subql_indexer_block_queue_size',
       help: 'The size of fetched block queue',
     }),
+    makeGaugeProvider({
+      name: 'subql_indexer_blocknumber_queue_size',
+      help: 'The size of fetched block number queue',
+    }),
     MetaService,
+    HealthService,
   ],
 })
 export class MetaModule {}
