@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2021-08-20
+### Added
+- Support Bytea type in Cli (#432)
+
 ## [0.10.0] - 2021-06-25
 ### Changed
 - Update dependencies (#358)

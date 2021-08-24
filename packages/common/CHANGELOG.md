@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2021-08-20
+### Added
+- Add Bytes type (#432)
+
+## [0.9.2] - 2021-07-29
+### Fixed
+- Fix types in entities, also add validation for schema input types. (#406)
+
+## [0.9.1] - 2021-07-26
+### Fixed
+- Fixed bug that prevented indexes from being added automatically on foreign keys (#371)
+
 ## [0.9.0] - 2021-06-25
 ### Added
 - Add metadata type for query and additional rule of dictionary for project validation(#342)

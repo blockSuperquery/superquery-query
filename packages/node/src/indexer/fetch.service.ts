@@ -10,8 +10,10 @@ import { isUndefined, range } from 'lodash';
 import { NodeConfig } from '../configure/NodeConfig';
 import { SubqueryProject } from '../configure/project.model';
 import { getLogger } from '../utils/logger';
+import { profiler, profilerWrap } from '../utils/profiler';
 import { delay } from '../utils/promise';
 import * as SubstrateUtil from '../utils/substrate';
+import { getYargsOption } from '../yargs';
 import { ApiService } from './api.service';
 import { BlockedQueue } from './BlockedQueue';
 import { Dictionary, DictionaryService } from './dictionary.service';
@@ -19,11 +21,21 @@ import { IndexerEvent } from './events';
 import { BlockContent, ProjectIndexFilters } from './types';
 
 const logger = getLogger('fetch');
-const FINALIZED_BLOCK_TIME_VARIANCE = 5;
+const BLOCK_TIME_VARIANCE = 5;
 const DICTIONARY_MAX_QUERY_SIZE = 10000;
+const { argv } = getYargsOption();
+
+const fetchBlocksBatches = argv.profiler
+  ? profilerWrap(
+      SubstrateUtil.fetchBlocksBatches,
+      'SubstrateUtil',
+      'fetchBlocksBatches',
+    )
+  : SubstrateUtil.fetchBlocksBatches;
 
 @Injectable()
 export class FetchService implements OnApplicationShutdown {
+  private latestBestHeight: number;
   private latestFinalizedHeight: number;
   private latestProcessedHeight: number;
   private latestBufferedHeight: number;
@@ -138,7 +150,7 @@ export class FetchService implements OnApplicationShutdown {
                 e.handler ? `${e.handler}(${e.handlerArgs ?? ''})` : ''
               }`,
             );
-            await delay(5);
+            process.exit(1);
           }
         }
       }
@@ -150,10 +162,14 @@ export class FetchService implements OnApplicationShutdown {
     this.projectIndexFilters = this.getIndexFilters();
     this.useDictionary =
       !!this.projectIndexFilters && !!this.project.network.dictionary;
+    this.eventEmitter.emit(IndexerEvent.UsingDictionary, {
+      value: Number(this.useDictionary),
+    });
     await this.getFinalizedBlockHead();
+    await this.getBestBlockHead();
   }
 
-  @Interval(FINALIZED_BLOCK_TIME_VARIANCE * 1000)
+  @Interval(BLOCK_TIME_VARIANCE * 1000)
   async getFinalizedBlockHead() {
     if (!this.api) {
       logger.debug(`Skip fetch finalized block until API is ready`);
@@ -172,6 +188,26 @@ export class FetchService implements OnApplicationShutdown {
       }
     } catch (e) {
       logger.error(e, `Having a problem when get finalized block`);
+    }
+  }
+
+  @Interval(BLOCK_TIME_VARIANCE * 1000)
+  async getBestBlockHead() {
+    if (!this.api) {
+      logger.debug(`Skip fetch best block until API is ready`);
+      return;
+    }
+    try {
+      const bestHeader = await this.api.rpc.chain.getHeader();
+      const currentBestHeight = bestHeader.number.toNumber();
+      if (this.latestBestHeight !== currentBestHeight) {
+        this.latestBestHeight = currentBestHeight;
+        this.eventEmitter.emit(IndexerEvent.BlockBest, {
+          height: this.latestBestHeight,
+        });
+      }
+    } catch (e) {
+      logger.error(e, `Having a problem when get best block`);
     }
   }
 
@@ -234,17 +270,17 @@ export class FetchService implements OnApplicationShutdown {
             this.eventEmitter.emit(IndexerEvent.BlocknumberQueueSize, {
               value: this.blockNumberBuffer.size,
             });
-
             continue; // skip nextBlockRange() way
           }
           // else use this.nextBlockRange()
         } catch (e) {
           logger.debug(`Fetch dictionary stopped: ${e.message}`);
+          this.eventEmitter.emit(IndexerEvent.SkipDictionary);
         }
       }
       // the original method: fill next batch size of blocks
       const endHeight = this.nextEndBlockHeight(startBlockHeight);
-      this.blockNumberBuffer.putAll(range(startBlockHeight, endHeight));
+      this.blockNumberBuffer.putAll(range(startBlockHeight, endHeight + 1));
       this.setLatestBufferedHeight(endHeight);
     }
   }
@@ -265,7 +301,7 @@ export class FetchService implements OnApplicationShutdown {
       const metadataChanged = await this.fetchMeta(
         bufferBlocks[bufferBlocks.length - 1],
       );
-      const blocks = await SubstrateUtil.fetchBlocksBatches(
+      const blocks = await fetchBlocksBatches(
         this.api,
         bufferBlocks,
         metadataChanged ? undefined : this.parentSpecVersion,
@@ -282,6 +318,7 @@ export class FetchService implements OnApplicationShutdown {
     }
   }
 
+  @profiler(argv.profiler)
   async fetchMeta(height: number): Promise<boolean> {
     const parentBlockHash = await this.api.rpc.chain.getBlockHash(
       Math.max(height - 1, 0),
@@ -314,12 +351,17 @@ export class FetchService implements OnApplicationShutdown {
     if (metaData.genesisHash !== this.api.genesisHash.toString()) {
       logger.warn(`Dictionary is disabled since now`);
       this.useDictionary = false;
+      this.eventEmitter.emit(IndexerEvent.UsingDictionary, {
+        value: Number(this.useDictionary),
+      });
+      this.eventEmitter.emit(IndexerEvent.SkipDictionary);
       return false;
     }
     if (metaData.lastProcessedHeight < startBlockHeight) {
       logger.warn(
         `Dictionary indexed block is behind current indexing block height`,
       );
+      this.eventEmitter.emit(IndexerEvent.SkipDictionary);
       return false;
     }
     return true;

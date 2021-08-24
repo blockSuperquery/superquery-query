@@ -2,7 +2,7 @@
 
 The Manifest `project.yaml` file can be seen as an entry point of your project and it defines most of the details on how SubQuery will index and transform the chain data.
 
-The Manifest can be in either YAML or JSON format. In this document we will use YAML in all the examples. Below is a standard example of a basic `project.yaml`. 
+The Manifest can be in either YAML or JSON format. In this document, we will use YAML in all the examples. Below is a standard example of a basic `project.yaml`. 
 
 ``` yml
 specVersion: "0.0.1"
@@ -34,18 +34,18 @@ dataSources:
 ```
 
 - `network.endpoint` defines the wss or ws endpoint of the blockchain to be indexed - **This must be a full archive node**. 
-- `network.dictionary` optionally provides the HTTP endpoint of a full chain dictionary to speed up processing - see [Running an Indexer](/run/run.md#using-a-dictionary)
+- `network.dictionary` optionally provides the HTTP endpoint of a full chain dictionary to speed up processing - see [Running an Indexer](../run/run.md#using-a-dictionary)
 - `dataSources` defines the data that will be filtered and extracted and the location of the mapping function handler for the data transformation to be applied. 
   - `kind` only supports `substrate/Runtime` for now.
   - `startBlock` specifies the block height to start indexing from.
   - `filter` will filter the data source to execute by the network endpoint spec name, see [network filters](#network-filters)
-  - `mapping.handlers` will list all the [mapping functions](/create/mapping) and their corresponding handler types, with additional [mapping filters](#mapping-filters).
+  - `mapping.handlers` will list all the [mapping functions](./mapping.md) and their corresponding handler types, with additional [mapping filters](#mapping-filters).
 
 ## Network Filters 
 
 Usually the user will create a SubQuery and expect to reuse it for both their testnet and mainnet environments (e.g Polkadot and Kusama). Between networks, various options are likely to be different (e.g. index start block). Therefore, we allow users to define different details for each data source which means that one SubQuery project can still be used across multiple networks.
 
-Users can add a `filter` on `dataSources` to decide which data source to run on the each network.
+Users can add a `filter` on `dataSources` to decide which data source to run on each network.
 
 Below is an example that shows different data sources for both the Polkadot and Kusama networks.
 
@@ -80,7 +80,7 @@ dataSources:
 
 Mapping filters are an extremely useful feature to decide what block, event, or extrinsic will trigger a mapping handler. 
 
-Only incoming data that statisfy the filter conditions will be processed by the mapping functions. Mapping filters are optional, but are recommended as they significantly reduce the amount of data processed by your SubQuery project and will improve indexing performance.
+Only incoming data that satisfy the filter conditions will be processed by the mapping functions. Mapping filters are optional but are recommended as they significantly reduce the amount of data processed by your SubQuery project and will improve indexing performance.
 
 ```yaml
 #Example filter from callHandler
@@ -90,17 +90,17 @@ filter:
    success: true
 ```
 
-Following table explains filters supported by different handlers.
+The following table explains filters supported by different handlers.
 
 | Handler                  | Supported filter                                          |
 |---------------------------|----------------------------------------------------|
-| [BlockHandler](/create/mapping.html#block-handler) | `specVersion` |
-| [EventHandler](/create/mapping.html#event-handler) | `module`,`method` |
-| [CallHandler](/create/mapping.html#call-handler) | `module`,`method` ,`success`|
+| [BlockHandler](./mapping.md#block-handler) | `specVersion` |
+| [EventHandler](./mapping.md#event-handler) | `module`,`method` |
+| [CallHandler](./mapping.md#call-handler) | `module`,`method` ,`success`|
 
 
--  Module and method filters are supported on any substrate based chain.
-- The `success` filter takes a boolean value, and can be used to filter the extrinsic by its success status.
+-  Module and method filters are supported on any substrate-based chain.
+- The `success` filter takes a boolean value and can be used to filter the extrinsic by its success status.
 - The `specVersion` filter specifies the spec version range for a substrate block. The following examples describe how to set version ranges.
 
 ```yaml

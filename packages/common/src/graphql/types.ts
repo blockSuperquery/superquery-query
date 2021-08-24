@@ -31,7 +31,7 @@ export interface GraphQLModelsType {
 export interface GraphQLEntityField {
   name: string;
 
-  type: keyof typeof FieldScalar | 'Json';
+  type: string;
 
   jsonInterface?: GraphQLJsonObjectType;
 
@@ -76,4 +76,5 @@ export enum FieldScalar {
   String = 'String',
   Date = 'Date',
   Boolean = 'Boolean',
+  Bytes = 'Bytes',
 }

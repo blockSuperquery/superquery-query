@@ -4,6 +4,7 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import {
+  BestBlockPayload,
   EventPayload,
   IndexerEvent,
   NetworkMetadataPayload,
@@ -19,9 +20,11 @@ const { version: packageVersion } = require('../../package.json');
 export class MetaService {
   private currentProcessingHeight: number;
   private currentProcessingTimestamp: number;
+  private bestHeight: number;
   private targetHeight: number;
   private networkMeta: NetworkMetadataPayload;
   private apiConnected: boolean;
+  private usingDictionary: boolean;
   private injectedApiConnected: boolean;
   private lastProcessedHeight: number;
   private lastProcessedTimestamp: number;
@@ -31,6 +34,7 @@ export class MetaService {
       currentProcessingHeight: this.currentProcessingHeight,
       currentProcessingTimestamp: this.currentProcessingTimestamp,
       targetHeight: this.targetHeight,
+      bestHeight: this.bestHeight,
       indexerNodeVersion: packageVersion,
       lastProcessedHeight: this.lastProcessedHeight,
       lastProcessedTimestamp: this.lastProcessedTimestamp,
@@ -38,6 +42,7 @@ export class MetaService {
       polkadotSdkVersion,
       apiConnected: this.apiConnected,
       injectedApiConnected: this.injectedApiConnected,
+      usingDictionary: this.usingDictionary,
       ...this.networkMeta,
     };
   }
@@ -59,6 +64,11 @@ export class MetaService {
     this.targetHeight = blockPayload.height;
   }
 
+  @OnEvent(IndexerEvent.BlockBest)
+  handleBestBlock(blockPayload: BestBlockPayload): void {
+    this.bestHeight = blockPayload.height;
+  }
+
   @OnEvent(IndexerEvent.NetworkMetadata)
   handleNetworkMetadata(networkMeta: NetworkMetadataPayload): void {
     this.networkMeta = networkMeta;
@@ -72,5 +82,10 @@ export class MetaService {
   @OnEvent(IndexerEvent.InjectedApiConnected)
   handleInjectedApiConnected({ value }: EventPayload<number>) {
     this.injectedApiConnected = !!value;
+  }
+
+  @OnEvent(IndexerEvent.UsingDictionary)
+  handleUsingDictionary({ value }: EventPayload<number>) {
+    this.usingDictionary = !!value;
   }
 }

@@ -6,6 +6,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2021-08-20
+### Changed
+- Update Polkadot/api to 5.5.2 (#439)
+### Added
+- support interpret Bytea type (#432)
+
+## [0.19.2] - 2021-08-16
+### Fixed
+- Improve data sources filtering handling and error messages (#417)
+### Changed
+- Adjust health check time to be the same as indexer timeout, or a minimum of 900 seconds. Also, log error when it is not healthy (#420)
+- Update Polkadot/api to 5.5.1 (#433)
+
+## [0.19.1] - 2021-07-29
+Upgrade priority: High. Fix failed to store schema object array in correct format in database.
+### Fixed
+- When the schema object type is an array convert to Jsonb type (#406)
+
+
+## [0.19.0] - 2021-07-27
+Upgrade priority: Low. Upgrade only to support a new `polkadot/api` version and for types.
+### Changed
+- Bump `polkadot/api` to 5.2.1 (#402)
+### Fixed
+- Disable `api.at()` in patched API (#402)
+- Fix to improve snake case handling for foreign keys and unique index constraint (#382)
+- Fix `subql-node --help` so that it displays full options (#396)
+### Added
+- Expose best block height in meta (#392)
+
+## [0.18.0] - 2021-07-06
+Upgrade priority: High. Recommend for all projects to upgrade. Require re-indexing if the project previous deployed with node v0.17.0 to v0.17.3
+### Fixed
+- Fix metric listener handle skip dictionary (#380)
+
+## [0.17.4] - 2021-07-06
+Upgrade priority: High. Require re-indexing if the project previous deployed with node v0.17.0 to v0.17.3 due to some blocks are missed when indexing.
+### Fixed
+- Fix problem when filling the block number buffer missing the last number which has caused some block records are missing. (#378)
+
+## [0.17.3] - 2021-07-06
+Upgrade priority: High. 
+### Fixed
+- Fixed bug that prevented indexes from being added automatically on foreign keys (#371)
+### Added
+- add profiler to monitoring indexer performance (#369)
+- add metrics to listen status of using dictionary and number of times it been skipped. (#369)
 
 ## [0.17.2] - 2021-07-01
 Upgrade priority: High.

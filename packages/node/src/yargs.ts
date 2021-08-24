@@ -47,6 +47,12 @@ export function getYargsOption() {
       type: 'boolean',
       default: false,
     },
+    profiler: {
+      demandOption: false,
+      describe: 'Show profiler information to console output',
+      type: 'boolean',
+      default: false,
+    },
     'network-endpoint': {
       demandOption: false,
       type: 'string',
@@ -86,5 +92,5 @@ export function getYargsOption() {
 }
 
 export function argv(arg: string): unknown {
-  return yargv[arg];
+  return getYargsOption().argv[arg];
 }

@@ -118,6 +118,7 @@ export class ApiService implements OnApplicationShutdown {
         configurable: true,
       });
     }
+    this.patchApiAt(this.patchedApi);
     this.patchApiQuery(this.patchedApi);
     this.patchApiTx(this.patchedApi);
     this.patchApiQueryMulti(this.patchedApi);
@@ -222,7 +223,7 @@ export class ApiService implements OnApplicationShutdown {
         return ret;
       }
     }
-    const ret = (NOT_SUPPORT('api.rpc.*.*') as unknown) as RpcMethodResult<
+    const ret = NOT_SUPPORT('api.rpc.*.*') as unknown as RpcMethodResult<
       T,
       AnyFunction
     >;
@@ -398,5 +399,9 @@ export class ApiService implements OnApplicationShutdown {
       },
       {},
     );
+  }
+
+  private patchApiAt(api: ApiPromise): void {
+    (api as any).at = NOT_SUPPORT('api.at()');
   }
 }

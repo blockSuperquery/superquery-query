@@ -41,6 +41,52 @@ describe('utils that handle schema.graphql', () => {
     expect(() => buildSchemaFromDocumentNode(graphqlSchema)).toThrow();
   });
 
+  it('support Bytes types', () => {
+    const graphqlSchema = gql`
+      type Test @entity {
+        id: ID!
+        hash: Bytes
+      }
+    `;
+    const schema = buildSchemaFromDocumentNode(graphqlSchema);
+    const entities = getAllEntitiesRelations(schema);
+    expect(entities.models[0].fields[1].type).toBe('Bytes');
+  });
+
+  it('throw error for union/enum/interface type', () => {
+    const graphqlSchema = gql`
+      type Test @entity {
+        id: ID!
+        unionKind: unionResult
+        enumKind: enumResult
+        who: Character
+      }
+      interface Character {
+        id: ID!
+        name: String!
+      }
+      union unionResult = Human | Droid | Starship
+      type Human @entity {
+        id: ID!
+      }
+      type Droid @entity {
+        id: ID!
+      }
+      type Starship @entity {
+        id: ID!
+      }
+      enum enumResult {
+        NEWHOPE
+        EMPIRE
+        JEDI
+      }
+    `;
+    expect(() => {
+      const schema = buildSchemaFromDocumentNode(graphqlSchema);
+      getAllEntitiesRelations(schema);
+    }).toThrow(/Not support/);
+  });
+
   it('can extract nested models and relations from the schema', () => {
     const graphqlSchema = gql`
       type Account @entity {
@@ -164,8 +210,12 @@ describe('utils that handle schema.graphql', () => {
     const graphqlSchema = gql`
       type Fruit @entity {
         id: ID!
-        apple: Apple @index
+        apple: Apple
         banana: [Banana] @index(unique: true)
+      }
+      type Fruit2 @entity {
+        id: ID!
+        apple: Apple @index
       }
       type Apple @entity {
         id: ID!
@@ -178,7 +228,10 @@ describe('utils that handle schema.graphql', () => {
     const entities = getAllEntitiesRelations(schema);
     expect(entities.models?.[0].indexes[0].fields).toEqual(['appleId']);
     expect(entities.models?.[0].indexes[0].using).toEqual('hash');
+    expect(entities.models?.[0].indexes[0].unique).toBe(false);
     expect(entities.models?.[0].indexes[1].unique).toBe(true);
+    expect(entities.models?.[1].indexes[0].fields).toEqual(['appleId']);
+    expect(entities.models?.[1].indexes[0].unique).toBe(false);
   });
 
   it('can read jsonfield', () => {

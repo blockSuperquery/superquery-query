@@ -9,13 +9,16 @@ import {
   GraphQLField,
   GraphQLObjectType,
   GraphQLOutputType,
+  GraphQLScalarType,
   GraphQLSchema,
+  isEnumType,
+  isInterfaceType,
   isListType,
   isNonNullType,
   isObjectType,
+  isUnionType,
 } from 'graphql';
 import {DirectiveName} from './constant';
-
 import {buildSchema} from './schema';
 import {
   FieldScalar,
@@ -27,6 +30,7 @@ import {
   GraphQLRelationsType,
   IndexType,
 } from './types';
+import {isFieldScalar} from './utils';
 
 export function getAllJsonObjects(_schema: GraphQLSchema | string) {
   const schema = typeof _schema === 'string' ? buildSchema(_schema) : _schema;
@@ -58,11 +62,11 @@ export function getAllEntitiesRelations(_schema: GraphQLSchema | string): GraphQ
     };
 
     for (const field of Object.values(entity.getFields())) {
-      const typeString = extractType(field.type).toString();
+      const typeString = extractType(field.type).name;
       const derivedFromDirectValues = getDirectiveValues(derivedFrom, field.astNode);
-
+      const indexDirectiveVal = getDirectiveValues(indexDirective, field.astNode);
       //If is a basic scalar type
-      if (Object.values(FieldScalar).includes(typeString)) {
+      if (isFieldScalar(typeString)) {
         newModel.fields.push(packEntityField(typeString, field, false));
       }
       // If is a foreign key
@@ -74,6 +78,11 @@ export function getAllEntitiesRelations(_schema: GraphQLSchema | string): GraphQ
           to: typeString,
           foreignKey: `${field.name}Id`,
         } as GraphQLRelationsType);
+        newModel.indexes.push({
+          unique: false,
+          fields: [`${field.name}Id`],
+          using: IndexType.HASH,
+        });
       }
       // If is derivedFrom
       else if (entityNameSet.includes(typeString) && derivedFromDirectValues) {
@@ -101,19 +110,21 @@ export function getAllEntitiesRelations(_schema: GraphQLSchema | string): GraphQ
         throw new Error(`${typeString} is not an valid type`);
       }
       // handle indexes
-      const indexDirectiveVal = getDirectiveValues(indexDirective, field.astNode);
       if (indexDirectiveVal) {
-        if (typeString !== 'ID' && Object.values(FieldScalar).includes(typeString)) {
+        if (typeString !== 'ID' && isFieldScalar(typeString)) {
           newModel.indexes.push({
             unique: indexDirectiveVal.unique,
             fields: [field.name],
           });
         } else if (typeString !== 'ID' && entityNameSet.includes(typeString)) {
-          newModel.indexes.push({
-            unique: indexDirectiveVal.unique,
-            fields: [`${field.name}Id`],
-            using: IndexType.HASH,
-          });
+          if (indexDirectiveVal.unique) {
+            const fkIndex = newModel.indexes.find(
+              (idx) => idx.fields.length === 1 && idx.fields[0] === `${field.name}Id`
+            );
+            if (fkIndex) {
+              fkIndex.unique = true;
+            }
+          }
         } else {
           throw new Error(`index can not be added on field ${field.name}`);
         }
@@ -126,20 +137,20 @@ export function getAllEntitiesRelations(_schema: GraphQLSchema | string): GraphQ
 }
 
 function packEntityField(
-  typeString: FieldScalar,
+  typeString: FieldScalar | string,
   field: GraphQLField<any, any>,
   isForeignKey: boolean
 ): GraphQLEntityField {
   return {
     name: isForeignKey ? `${field.name}Id` : field.name,
-    type: isForeignKey ? 'String' : typeString,
+    type: isForeignKey ? FieldScalar.String : typeString,
     isArray: isListType(isNonNullType(field.type) ? getNullableType(field.type) : field.type),
     nullable: !isNonNullType(field.type),
   };
 }
 
 function packJSONField(
-  typeString: FieldScalar,
+  typeString: String,
   field: GraphQLField<any, any>,
   jsonObject: GraphQLJsonObjectType
 ): GraphQLEntityField {
@@ -162,7 +173,7 @@ export function setJsonObjectType(
   };
   for (const field of Object.values(jsonObject.getFields())) {
     //check if field is also json
-    const typeString = extractType(field.type).toString();
+    const typeString = extractType(field.type).name;
     const isJsonType = jsonObjects.map((json) => json.name).includes(typeString);
     graphQLJsonObject.fields.push({
       name: field.name,
@@ -180,8 +191,18 @@ export function setJsonObjectType(
   return graphQLJsonObject;
 }
 
+type GraphQLNonListType = GraphQLScalarType | GraphQLObjectType<any, any>; // check | GraphQLInterfaceType | GraphQLUnionType | GraphQLEnumType;
 //Get the type, ready to be convert to string
-function extractType(type: GraphQLOutputType) {
+function extractType(type: GraphQLOutputType): GraphQLNonListType {
+  if (isUnionType(type)) {
+    throw new Error(`Not support Union type`);
+  }
+  if (isInterfaceType(type)) {
+    throw new Error(`Not support Interface type`);
+  }
+  if (isEnumType(type)) {
+    throw new Error(`Not support Enum type`);
+  }
   const offNullType = isNonNullType(type) ? getNullableType(type) : type;
   const offListType = isListType(offNullType) ? assertListType(offNullType).ofType : type;
   return isNonNullType(offListType) ? getNullableType(offListType) : offListType;

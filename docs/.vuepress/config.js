@@ -2,9 +2,9 @@ module.exports = {
   locales: {
     '/': {
       lang: 'English',
-      title: 'SubQuery Guide',
-      description: 'SubQuery is a open-source tool to provide a complete process and query data solution to every substrate project and will become core infrastructure for the Polkadot ecosystem.'
-    },
+      title: 'SubQuery Docs',
+      description: 'Explore and transform your chain data to build intuitive dApps faster!.',
+    }
   },
   themeConfig: {
     logo: '/assets/img/logo.png',
@@ -29,6 +29,14 @@ module.exports = {
           '/quickstart/quickstart.md',
           '/quickstart/helloworld-localhost.md',
           '/quickstart/understanding-helloworld.md',
+          '/quickstart/helloworld-hosted.md',
+        ]
+      },
+      {
+        title: 'Installation',
+        path: '/install/install',
+        children: [
+          '/install/install.md'
         ]
       },
       {
@@ -65,6 +73,36 @@ module.exports = {
           '/query/query.md',
           '/query/graphql.md'
         ]
+      },
+      {
+        title: 'Tutorials & Examples',
+        path: '/tutorials_examples/introduction',
+        children: [
+          '/tutorials_examples/howto.md',
+          '/tutorials_examples/terminology.md',
+        ]
+      },
+      {
+        title: 'FAQs',
+        path: '/faqs/faqs.md',
+        children: []
+      },
+      {
+        title: 'Miscellaneous',
+        path: '/miscellaneous/contributing',
+        children: [
+          '/miscellaneous/contributing.md',
+          '/miscellaneous/social_media.md',
+          '/miscellaneous/branding.md',
+          '/miscellaneous/ambassadors.md',
+        ]
+      },
+      {
+        title: 'References',
+        path: '/references/references',
+        children: [
+          '/references/references.md',
+        ]
       }
     ],
   },
@@ -78,7 +116,7 @@ module.exports = {
     ],
   ],
   markdown: {
-    extractHeaders: ['h2','h3','h4']
+    extractHeaders: ['h2','h3','h4'],
   }
 }
 
