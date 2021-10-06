@@ -8,50 +8,54 @@ cli for polkagraph
 [![License](https://img.shields.io/npm/l/@subql/cli.svg)](https://github.com/packages/cli/blob/master/package.json)
 
 <!-- toc -->
-* [@subql/cli](#subqlcli)
-* [Usage](#usage)
-* [Commands](#commands)
+
+- [@subql/cli](#subqlcli)
+- [Usage](#usage)
+- [Commands](#commands)
 <!-- tocstop -->
 
 # Usage
 
 <!-- usage -->
+
 ```sh-session
 $ npm install -g @subql/cli
 $ subql COMMAND
 running command...
 $ subql (-v|--version|version)
-@subql/cli/0.10.1-0 linux-x64 node-v14.17.5
+@subql/cli/0.12.1-3 linux-x64 node-v14.18.0
 $ subql --help [COMMAND]
 USAGE
   $ subql COMMAND
 ...
 ```
+
 <!-- usagestop -->
 
 # Commands
 
 <!-- commands -->
-* [`subql build`](#subql-build)
-* [`subql codegen`](#subql-codegen)
-* [`subql help [COMMAND]`](#subql-help-command)
-* [`subql init [PROJECTNAME]`](#subql-init-projectname)
-* [`subql validate`](#subql-validate)
+
+- [`subql build`](#subql-build)
+- [`subql codegen`](#subql-codegen)
+- [`subql help [COMMAND]`](#subql-help-command)
+- [`subql init [PROJECTNAME]`](#subql-init-projectname)
+- [`subql validate`](#subql-validate)
 
 ## `subql build`
 
-Pack this SubQuery project
+Build this SubQuery project code
 
 ```
 USAGE
   $ subql build
 
 OPTIONS
-  -f, --force
-  --file=file
+  -l, --location=location                   local folder
+  --mode=(production|prod|development|dev)  [default: production]
 ```
 
-_See code: [lib/commands/build.js](https://github.com/packages/cli/blob/v0.10.1-0/lib/commands/build.js)_
+_See code: [lib/commands/build.js](https://github.com/packages/cli/blob/v0.12.1-3/lib/commands/build.js)_
 
 ## `subql codegen`
 
@@ -63,10 +67,11 @@ USAGE
 
 OPTIONS
   -f, --force
+  -l, --location=location  local folder to run codegen in
   --file=file
 ```
 
-_See code: [lib/commands/codegen.js](https://github.com/packages/cli/blob/v0.10.1-0/lib/commands/codegen.js)_
+_See code: [lib/commands/codegen.js](https://github.com/packages/cli/blob/v0.12.1-3/lib/commands/codegen.js)_
 
 ## `subql help [COMMAND]`
 
@@ -98,10 +103,14 @@ ARGUMENTS
 
 OPTIONS
   -f, --force
+  -l, --location=location    local folder to create the project in
+  --install-dependencies     Install dependencies as well
+  --npm                      Force using NPM instead of yarn, only works with `install-dependencies` flag
+  --specVersion=specVersion  [default: 0.0.1] The spec version to be used by the project
   --starter
 ```
 
-_See code: [lib/commands/init.js](https://github.com/packages/cli/blob/v0.10.1-0/lib/commands/init.js)_
+_See code: [lib/commands/init.js](https://github.com/packages/cli/blob/v0.12.1-3/lib/commands/init.js)_
 
 ## `subql validate`
 
@@ -116,5 +125,6 @@ OPTIONS
   --silent
 ```
 
-_See code: [lib/commands/validate.js](https://github.com/packages/cli/blob/v0.10.1-0/lib/commands/validate.js)_
+_See code: [lib/commands/validate.js](https://github.com/packages/cli/blob/v0.12.1-3/lib/commands/validate.js)_
+
 <!-- commandsstop -->

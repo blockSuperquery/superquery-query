@@ -67,10 +67,10 @@ export DB_PASS=postgres
 export DB_DATABASE=postgres
 export DB_HOST=localhost
 export DB_PORT=5432
-subql-node -f your-project-path 
-````
+subql-node -f your-project-path
+```
 
-Depending on the configuration of your Postgres database (e.g. a different database password), please ensure also that both the indexer (`subql/node`) and the query service (`subql/query`) can establish a connection to it.
+Залежно від конфігурації вашої бази даних Postgres (наприклад, іншого пароля бази даних) переконайтеся, що індексатор (`subql/node`) та служба запитів (` subql/query`) можуть встановити з’єднання з нею.
 
 #### Specify a configuration file
 
@@ -105,7 +105,7 @@ When the indexer first indexes the chain, fetching single blocks will significan
 subql-node -f your-project-path --local
 ```
 
-For debugging purposes, users can run the node in local mode. Switching to local model will create Postgres tables in the default schema `public`.
+For debugging purposes, users can run the node in local mode. Перехід до локальної моделі створює таблиці Postgres у схемі за замовчуванням `public `.
 
 If local mode is not used, a new Postgres schema with the initial `subquery_` and corresponding project tables will be created.
 
@@ -121,6 +121,7 @@ npm install -g @subql/query
 Please note that we **DO NOT** encourage the use of `yarn global` due to its poor dependency management which may lead to an errors down the line.
 
 ### Running the Query service
+
 ``` export DB_HOST=localhost subql-query --name <project_name> --playground ````
 
 Make sure the project name is the same as the project name when you [initialize the project](../quickstart/quickstart.md#initialise-the-starter-subquery-project). Also, check the environment variables are correct.

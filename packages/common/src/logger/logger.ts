@@ -44,7 +44,7 @@ export class Logger {
             }
           : {},
       prettyPrint: outputFormat !== 'json',
-      prettifier: function (options) {
+      prettifier: function (options: unknown) {
         // `this` is bound to the pino instance
         // Deal with whatever options are supplied.
         return function prettifier(inputData: string | object) {
@@ -68,7 +68,7 @@ export class Logger {
           return `${time} <${ctx.magentaBright(category)}> ${colorizeLevel(level)} ${message} ${error}\n`;
         };
 
-        function isObject(input) {
+        function isObject(input: unknown): boolean {
           return Object.prototype.toString.apply(input) === '[object Object]';
         }
       },
@@ -77,15 +77,12 @@ export class Logger {
 
   getLogger(category: string): Pino.Logger {
     if (!this.childLoggers[category]) {
-      this.childLoggers[category] = this.pino.child({category, level: this.pino.level});
+      this.childLoggers[category] = this.pino.child({category});
     }
     return this.childLoggers[category];
   }
 
   setLevel(level: LevelWithSilent): void {
     this.pino.level = level;
-    for (const childLogger of Object.values(this.childLoggers)) {
-      childLogger.level = level;
-    }
   }
 }

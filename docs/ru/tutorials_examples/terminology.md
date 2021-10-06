@@ -1,6 +1,6 @@
-## Terminology
+# Терминология
 
-- SubQuery Project (*where the magic happens*): A definition ([`@subql/cli`](https://www.npmjs.com/package/@subql/cli)) of how a SubQuery Node should traverse and aggregate a projects network and how the data should the transformed and stored to enable useful GraphQL queries
-- SubQuery Node (*where the work is done*): A package ([`@subql/node`](https://www.npmjs.com/package/@subql/node)) that will accept a SubQuery project definiton, and run a node that constantly indexes a connected network to a database
-- SubQuery Query Service (*where we get the data from*): A package ([`@subql/query`](https://www.npmjs.com/package/@subql/query)) that interacts with the GraphQL API of a deployed SubQuery node to query and view the indexed data
-- GraphQL (*how we query the data*): A query langage for APIs that is specifically suited for flexible graph based data - see [graphql.org](https://graphql.org/learn/)
+- SubQuery Project (* где происходит волшебство *): определение ([` @ subql / cli `](https://www.npmjs.com/package/@subql/cli)) того, как SubQuery Node должен проходить и агрегировать сеть проектов и как данные должны преобразовываться и храниться, для включения полезных запросов GraphQL
+- SubQuery Node (* где выполняется работа *): пакет ([` @ subql / node `](https://www.npmjs.com/package/@subql/node)), который примет определение SubQuery project и запустит ноду, которая постоянно индексирует подключенную сеть к базе данных
+- Служба запросов SubQuery (* откуда мы получаем данные *): пакет ([` @ subql / query `](https://www.npmjs.com/package/@subql/query)), который взаимодействует с GraphQL API запущенной ноды SubQuery для запроса и просмотра индексированных данных
+- GraphQL (* как мы запрашиваем данные *): язык запросов для API, который специально подходит для гибких данных на основе графиков - смотрите [ graphql.org ](https://graphql.org/learn/)

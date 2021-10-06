@@ -1,22 +1,19 @@
 // Copyright 2020-2021 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import {RegistryTypes} from '@polkadot/types/types';
 import {SubqlKind} from './constants';
 
-export interface ProjectManifest {
+export interface IProjectManifest<M extends SubqlMapping = SubqlMapping> {
   specVersion: string;
   description: string;
   repository: string;
+  dataSources: SubqlDataSource<M>[];
+}
 
-  schema: string;
-
-  network: {
-    endpoint: string;
-    customTypes?: RegistryTypes;
-  };
-
-  dataSources: SubqlDataSource[];
+export interface ProjectNetworkConfig {
+  endpoint: string;
+  dictionary?: string;
+  genesisHash?: string;
 }
 
 // [startSpecVersion?, endSpecVersion?] closed range
@@ -63,20 +60,18 @@ export interface SubqlMapping {
   handlers: SubqlHandler[];
 }
 
-export interface SubqlDatasource {
-  name: string;
+export interface SubqlDatasource<M extends SubqlMapping> {
   kind: SubqlKind;
-  filter?: SubqlNetworkFilter;
   startBlock?: number;
-  mapping: SubqlMapping;
+  mapping: M;
 }
 
-export interface SubqlRuntimeDatasource extends SubqlDatasource {
+export interface SubqlRuntimeDatasource<M extends SubqlMapping = SubqlMapping> extends SubqlDatasource<M> {
   kind: SubqlKind.Runtime;
 }
 
 export interface SubqlNetworkFilter {
-  specName: String;
+  specName: string;
 }
 
-export type SubqlDataSource = SubqlRuntimeDatasource;
+export type SubqlDataSource<M extends SubqlMapping = SubqlMapping> = SubqlRuntimeDatasource<M>;

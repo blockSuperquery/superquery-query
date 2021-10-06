@@ -3,7 +3,7 @@
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ApiPromise, WsProvider } from '@polkadot/api';
-import { ProjectNetwork } from '@subql/common/project/models';
+import { ProjectManifestVersioned, ProjectNetworkV0_0_1 } from '@subql/common';
 import { omit } from 'lodash';
 import { SubqueryProject } from '../configure/project.model';
 import { ApiService } from './api.service';
@@ -20,7 +20,7 @@ jest.mock('@polkadot/api', () => {
   return { ApiPromise, WsProvider: jest.fn() };
 });
 
-const testNetwork: ProjectNetwork = {
+const testNetwork: ProjectNetworkV0_0_1 = {
   endpoint: 'wss://kusama.api.onfinality.io/public-ws',
   types: {
     TestType: 'u32',
@@ -45,9 +45,14 @@ const testNetwork: ProjectNetwork = {
 };
 
 function testSubqueryProject(): SubqueryProject {
-  const project = new SubqueryProject();
-  project.network = testNetwork;
-  return project;
+  return new SubqueryProject(
+    new ProjectManifestVersioned({
+      specVersion: '0.0.1',
+      network: testNetwork,
+      dataSources: [],
+    } as any),
+    '',
+  );
 }
 
 describe('ApiService', () => {
@@ -60,5 +65,15 @@ describe('ApiService', () => {
       provider: expect.anything(),
       ...omit(testNetwork, ['endpoint']),
     });
+  });
+
+  it('throws if expected genesis hash doesnt match', async () => {
+    const project = testSubqueryProject();
+
+    (project.projectManifest.asV0_0_1.network as any).genesisHash = '0x';
+
+    const apiService = new ApiService(project, new EventEmitter2());
+
+    await expect(apiService.init()).rejects.toThrow();
   });
 });

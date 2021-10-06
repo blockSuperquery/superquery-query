@@ -4,13 +4,7 @@
 import fs from 'fs';
 import path from 'path';
 import {promisify} from 'util';
-import {
-  getAllEntitiesRelations,
-  buildSchema,
-  loadProjectManifest,
-  getAllJsonObjects,
-  setJsonObjectType,
-} from '@subql/common';
+import {getAllEntitiesRelations, loadProjectManifest, getAllJsonObjects, setJsonObjectType} from '@subql/common';
 import {GraphQLEntityField, GraphQLJsonFieldType, GraphQLEntityIndex} from '@subql/common/graphql/types';
 import ejs from 'ejs';
 import {upperFirst} from 'lodash';
@@ -45,7 +39,7 @@ export interface ProcessedField {
   isJsonInterface: boolean;
 }
 
-export async function generateJsonInterfaces(projectPath, schema: string) {
+export async function generateJsonInterfaces(projectPath: string, schema: string): Promise<void> {
   const typesDir = path.join(projectPath, TYPE_ROOT_DIR);
   const jsonObjects = getAllJsonObjects(schema);
   const jsonInterfaces = jsonObjects.map((r) => {
