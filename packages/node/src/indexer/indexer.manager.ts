@@ -1,7 +1,6 @@
 // Copyright 2020-2021 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import fs from 'fs';
 import path from 'path';
 import { Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -9,26 +8,35 @@ import { ApiPromise } from '@polkadot/api';
 import {
   buildSchema,
   getAllEntitiesRelations,
-  isRuntimeDataSourceV0_2_0,
-  RuntimeDataSrouceV0_0_1,
-  SubqlKind,
-  SubqlRuntimeDatasource,
+  isBlockHandlerProcessor,
+  isCallHandlerProcessor,
+  isEventHandlerProcessor,
 } from '@subql/common';
+import {
+  SubqlCustomDatasource,
+  SubqlDatasource,
+  SubqlHandlerKind,
+  SubqlNetworkFilter,
+  SubqlRuntimeHandler,
+} from '@subql/types';
 import { QueryTypes, Sequelize } from 'sequelize';
 import { NodeConfig } from '../configure/NodeConfig';
 import { SubqueryProject } from '../configure/project.model';
 import { SubqueryModel, SubqueryRepo } from '../entities';
 import { getLogger } from '../utils/logger';
 import { profiler } from '../utils/profiler';
+import { isCustomDs, isRuntimeDs } from '../utils/project';
 import * as SubstrateUtil from '../utils/substrate';
 import { getYargsOption } from '../yargs';
 import { ApiService } from './api.service';
+import { DsProcessorService } from './ds-processor.service';
 import { MetadataFactory } from './entities/Metadata.entity';
 import { IndexerEvent } from './events';
 import { FetchService } from './fetch.service';
+import { MmrService } from './mmr.service';
 import { PoiService } from './poi.service';
 import { PoiBlock } from './PoiBlock';
-import { IndexerSandbox } from './sandbox';
+import { IndexerSandbox, SandboxService } from './sandbox.service';
 import { StoreService } from './store.service';
 import { BlockContent } from './types';
 
@@ -37,53 +45,31 @@ const DEFAULT_DB_SCHEMA = 'public';
 const logger = getLogger('indexer');
 const { argv } = getYargsOption();
 
-// We cache this to avoid repeated reads from fs
-const projectEntryCache: Record<string, string> = {};
-
-function getProjectEntry(root: string): string {
-  const pkgPath = path.join(root, 'package.json');
-  try {
-    if (!projectEntryCache[pkgPath]) {
-      const content = fs.readFileSync(pkgPath).toString();
-      const pkg = JSON.parse(content);
-      if (!pkg.main) {
-        return './dist';
-      }
-      projectEntryCache[pkgPath] = pkg.main.startsWith('./')
-        ? pkg.main
-        : `./${pkg.main}`;
-    }
-
-    return projectEntryCache[pkgPath];
-  } catch (err) {
-    throw new Error(
-      `can not find package.json within directory ${this.option.root}`,
-    );
-  }
-}
-
 @Injectable()
 export class IndexerManager {
-  private vms: Record<string, IndexerSandbox> = {};
   private api: ApiPromise;
   private subqueryState: SubqueryModel;
   private prevSpecVersion?: number;
-  private filteredDataSources: SubqlRuntimeDatasource[];
+  private filteredDataSources: SubqlDatasource[];
 
   constructor(
-    protected apiService: ApiService,
-    protected storeService: StoreService,
-    protected fetchService: FetchService,
-    protected poiService: PoiService,
-    protected sequelize: Sequelize,
-    protected project: SubqueryProject,
-    protected nodeConfig: NodeConfig,
+    private apiService: ApiService,
+    private storeService: StoreService,
+    private fetchService: FetchService,
+    private poiService: PoiService,
+    protected mmrService: MmrService,
+    private sequelize: Sequelize,
+    private project: SubqueryProject,
+    private nodeConfig: NodeConfig,
+    private sandboxService: SandboxService,
+    private dsProcessorService: DsProcessorService,
     @Inject('Subquery') protected subqueryRepo: SubqueryRepo,
     private eventEmitter: EventEmitter2,
   ) {}
 
   @profiler(argv.profiler)
-  async indexBlock({ block, events, extrinsics }: BlockContent): Promise<void> {
+  async indexBlock(blockContent: BlockContent): Promise<void> {
+    const { block, events, extrinsics } = blockContent;
     const blockHeight = block.block.header.number.toNumber();
     this.eventEmitter.emit(IndexerEvent.BlockProcessing, {
       height: blockHeight,
@@ -93,45 +79,24 @@ export class IndexerManager {
     this.storeService.setTransaction(tx);
 
     let poiBlockHash: Uint8Array;
-
     try {
-      const inject = block.specVersion !== this.prevSpecVersion;
-      await this.apiService.setBlockhash(block.block.hash, inject);
+      const isUpgraded = block.specVersion !== this.prevSpecVersion;
+      // if parentBlockHash injected, which means we need to check runtime upgrade
+      await this.apiService.setBlockhash(
+        block.block.hash,
+        isUpgraded ? block.block.header.parentHash : undefined,
+      );
       for (const ds of this.filteredDataSources) {
-        const vm = this.vms[this.getDataSourceEntry(ds)];
-        if (ds.kind === SubqlKind.Runtime) {
-          for (const handler of ds.mapping.handlers) {
-            switch (handler.kind) {
-              case SubqlKind.BlockHandler:
-                if (SubstrateUtil.filterBlock(block, handler.filter)) {
-                  await vm.securedExec(handler.handler, [block]);
-                }
-                break;
-              case SubqlKind.CallHandler: {
-                const filteredExtrinsics = SubstrateUtil.filterExtrinsics(
-                  extrinsics,
-                  handler.filter,
-                );
-                for (const e of filteredExtrinsics) {
-                  await vm.securedExec(handler.handler, [e]);
-                }
-                break;
-              }
-              case SubqlKind.EventHandler: {
-                const filteredEvents = SubstrateUtil.filterEvents(
-                  events,
-                  handler.filter,
-                );
-                for (const e of filteredEvents) {
-                  await vm.securedExec(handler.handler, [e]);
-                }
-                break;
-              }
-              default:
-            }
-          }
+        const vm = await this.sandboxService.getDsProcessor(ds);
+        if (isRuntimeDs(ds)) {
+          await this.indexBlockForRuntimeDs(
+            vm,
+            ds.mapping.handlers,
+            blockContent,
+          );
+        } else if (isCustomDs(ds)) {
+          await this.indexBlockForCustomDs(ds, vm, blockContent);
         }
-        // TODO: support Ink! and EVM
       }
       this.subqueryState.nextBlockHeight =
         block.block.header.number.toNumber() + 1;
@@ -144,9 +109,6 @@ export class IndexerManager {
           operationHash,
           await this.poiService.getLatestPoiBlockHash(),
           this.project.path, //projectId // TODO, define projectId
-        );
-        poiBlock.mmrRoot = Buffer.from(
-          `mmr${block.block.header.hash.toString()}`,
         );
         poiBlockHash = poiBlock.hash;
         await this.storeService.setPoi(tx, poiBlock);
@@ -168,6 +130,7 @@ export class IndexerManager {
   }
 
   async start(): Promise<void> {
+    await this.dsProcessorService.validateCustomDs();
     await this.apiService.init();
     await this.fetchService.init();
     this.api = this.apiService.getApi();
@@ -175,7 +138,10 @@ export class IndexerManager {
     await this.initDbSchema();
     await this.ensureMetadata(this.subqueryState.dbSchema);
     if (this.nodeConfig.proofOfIndex) {
-      await this.poiService.init(this.subqueryState.dbSchema);
+      await Promise.all([
+        this.poiService.init(this.subqueryState.dbSchema),
+        this.mmrService.init(this.subqueryState.dbSchema),
+      ]);
     }
     void this.fetchService
       .startLoop(this.subqueryState.nextBlockHeight)
@@ -187,26 +153,12 @@ export class IndexerManager {
     this.filteredDataSources = this.filterDataSources();
     this.fetchService.register((block) => this.indexBlock(block));
 
-    for (const ds of this.filteredDataSources) {
-      const entry = this.getDataSourceEntry(ds);
-
-      if (!this.vms[entry]) {
-        this.vms[entry] = await this.initVM(entry);
-      }
+    if (this.nodeConfig.proofOfIndex) {
+      void this.mmrService.syncFileBaseFromPoi().catch((err) => {
+        logger.error(err, 'failed to sync poi to mmr');
+        process.exit(1);
+      });
     }
-  }
-
-  private async initVM(entry: string): Promise<IndexerSandbox> {
-    const api = await this.apiService.getPatchedApi();
-    return new IndexerSandbox(
-      {
-        store: this.storeService.getStore(),
-        api,
-        root: this.project.path,
-        entry,
-      },
-      this.nodeConfig,
-    );
   }
 
   private getStartBlockFromDataSources() {
@@ -257,6 +209,7 @@ export class IndexerManager {
           await this.sequelize.createSchema(projectSchema, undefined);
         }
       }
+
       project = await this.subqueryRepo.create({
         name,
         dbSchema: projectSchema,
@@ -272,7 +225,7 @@ export class IndexerManager {
         await project.save();
       } else if (project.networkGenesis !== genesisHash) {
         logger.error(
-          `Not same network: genesisHash different - ${project.networkGenesis} : ${genesisHash}`,
+          `Not same network: genesisHash different. expected="${project.networkGenesis}"" actual="${genesisHash}"`,
         );
         process.exit(1);
       }
@@ -314,41 +267,146 @@ export class IndexerManager {
     return Number(nextval);
   }
 
-  private filterDataSources(): SubqlRuntimeDatasource[] {
-    const dataSourcesFilteredSpecName = this.getDataSourcesForSpecName();
-    if (dataSourcesFilteredSpecName.length === 0) {
+  private filterDataSources(): SubqlDatasource[] {
+    let filteredDs = this.getDataSourcesForSpecName();
+    if (filteredDs.length === 0) {
       logger.error(
         `Did not find any dataSource match with network specName ${this.api.runtimeVersion.specName}`,
       );
       process.exit(1);
     }
-    const dataSourcesFilteredStartBlock = dataSourcesFilteredSpecName.filter(
+    filteredDs = filteredDs.filter(
       (ds) => ds.startBlock <= this.subqueryState.nextBlockHeight,
     );
-    if (dataSourcesFilteredStartBlock.length === 0) {
+    if (filteredDs.length === 0) {
       logger.error(
         `Your start block is greater than the current indexed block height in your database. Either change your startBlock (project.yaml) to <= ${this.subqueryState.nextBlockHeight} or delete your database and start again from the currently specified startBlock`,
       );
       process.exit(1);
     }
-    return dataSourcesFilteredStartBlock;
+    // perform filter for custom ds
+    filteredDs = filteredDs.filter((ds) => {
+      if (isCustomDs(ds)) {
+        return this.dsProcessorService
+          .getDsProcessor(ds)
+          .dsFilterProcessor(ds, this.api);
+      } else {
+        return true;
+      }
+    });
+
+    if (!filteredDs.length) {
+      logger.error(`Did not find any datasources with associated processor`);
+      process.exit(1);
+    }
+    return filteredDs;
   }
 
-  private getDataSourcesForSpecName(): SubqlRuntimeDatasource[] {
+  private getDataSourcesForSpecName(): SubqlDatasource[] {
     return this.project.dataSources.filter(
       (ds) =>
-        isRuntimeDataSourceV0_2_0(ds) ||
-        !(ds as RuntimeDataSrouceV0_0_1).filter?.specName ||
-        (ds as RuntimeDataSrouceV0_0_1).filter.specName ===
-          this.api.runtimeVersion.specName.toString(),
+        !ds.filter?.specName ||
+        ds.filter.specName === this.api.runtimeVersion.specName.toString(),
     );
   }
 
-  private getDataSourceEntry(dataSource: SubqlRuntimeDatasource): string {
-    if (isRuntimeDataSourceV0_2_0(dataSource)) {
-      return dataSource.mapping.file;
-    } else {
-      return getProjectEntry(this.project.path);
+  private async indexBlockForRuntimeDs(
+    vm: IndexerSandbox,
+    handlers: SubqlRuntimeHandler[],
+    { block, events, extrinsics }: BlockContent,
+  ): Promise<void> {
+    for (const handler of handlers) {
+      switch (handler.kind) {
+        case SubqlHandlerKind.Block:
+          if (SubstrateUtil.filterBlock(block, handler.filter)) {
+            await vm.securedExec(handler.handler, [block]);
+          }
+          break;
+        case SubqlHandlerKind.Call: {
+          const filteredExtrinsics = SubstrateUtil.filterExtrinsics(
+            extrinsics,
+            handler.filter,
+          );
+          for (const e of filteredExtrinsics) {
+            await vm.securedExec(handler.handler, [e]);
+          }
+          break;
+        }
+        case SubqlHandlerKind.Event: {
+          const filteredEvents = SubstrateUtil.filterEvents(
+            events,
+            handler.filter,
+          );
+          for (const e of filteredEvents) {
+            await vm.securedExec(handler.handler, [e]);
+          }
+          break;
+        }
+        default:
+      }
+    }
+  }
+
+  private async indexBlockForCustomDs(
+    ds: SubqlCustomDatasource<string, SubqlNetworkFilter>,
+    vm: IndexerSandbox,
+    { block, events, extrinsics }: BlockContent,
+  ): Promise<void> {
+    const plugin = this.dsProcessorService.getDsProcessor(ds);
+    for (const handler of ds.mapping.handlers) {
+      const processor = plugin.handlerProcessors[handler.kind];
+      if (isBlockHandlerProcessor(processor)) {
+        const transformedOutput = await processor.transformer(
+          block,
+          ds,
+          this.api,
+          await this.dsProcessorService.getAssets(ds),
+        );
+        if (
+          !handler.filter ||
+          processor.filterProcessor(handler.filter, transformedOutput, ds)
+        ) {
+          await vm.securedExec(handler.handler, [transformedOutput]);
+        }
+      } else if (isCallHandlerProcessor(processor)) {
+        const filteredExtrinsics = SubstrateUtil.filterExtrinsics(
+          extrinsics,
+          processor.baseFilter,
+        );
+        for (const extrinsic of filteredExtrinsics) {
+          const transformedOutput = await processor.transformer(
+            extrinsic,
+            ds,
+            this.api,
+            await this.dsProcessorService.getAssets(ds),
+          );
+          if (
+            !handler.filter ||
+            processor.filterProcessor(handler.filter, transformedOutput, ds)
+          ) {
+            await vm.securedExec(handler.handler, [transformedOutput]);
+          }
+        }
+      } else if (isEventHandlerProcessor(processor)) {
+        const filteredEvents = SubstrateUtil.filterEvents(
+          events,
+          processor.baseFilter,
+        );
+        for (const event of filteredEvents) {
+          const transformedOutput = await processor.transformer(
+            event,
+            ds,
+            this.api,
+            await this.dsProcessorService.getAssets(ds),
+          );
+          if (
+            !handler.filter ||
+            processor.filterProcessor(handler.filter, transformedOutput, ds)
+          ) {
+            await vm.securedExec(handler.handler, [transformedOutput]);
+          }
+        }
+      }
     }
   }
 }

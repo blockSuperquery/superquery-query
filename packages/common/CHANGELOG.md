@@ -4,7 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+All logs must start with the format: [x.y.z] - yyyy-mm-dd
+
 ## [Unreleased]
+
+## [0.12.0] - 2021-10-26
+### Changed
+- Move project manifest types to @subql/types because it is now also required by subquery project. (#512)
+
+## [0.11.0] - 2021-10-12
+### Added
+- Support for new project manifest spec v0.2.0. Which has many improvements including, no longer requiring the package.json file, multiple code entry points, referencing files via other protocols such as IPFS (#495)
 
 ## [0.10.1] - 2021-08-27
 ### Fixed
@@ -56,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - bump dependencies (#148)
 
-## 0.6.0 - 2021-01-27
+## [0.6.0] - 2021-01-27
 ### Fixed
 - pin class-transfermer to 0.3.1 (#116)
 
@@ -73,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - support callHandler and eventHandler (#47)
 
-## 0.2.0 - 2020-12-22
+## [0.2.0] - 2020-12-22
 ### Added
 - init commit
 

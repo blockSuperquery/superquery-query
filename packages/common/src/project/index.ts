@@ -3,5 +3,5 @@
 
 export * from './types';
 export * from './load';
-export * from './constants';
 export * from './versioned';
+export * from './utils';
