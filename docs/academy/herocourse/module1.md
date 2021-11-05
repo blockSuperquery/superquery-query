@@ -4,15 +4,9 @@
 
 **Documentation reference**
 
-[Hello World(localhost with Docker](https://doc.subquery.network/quickstart/helloworld-localhost/#)
+[Hello World (localhost with Docker)](/quickstart/helloworld-localhost.md)
 
-[Hello World explained](https://doc.subquery.network/quickstart/understanding-helloworld/)
-
-## Lesson 2: Hello World with SubQuery Projects
-
-**Documentation reference**
-
-[Hello World(SubQuery hosted](https://doc.subquery.network/quickstart/helloworld-hosted/)
+[Hello World explained](/quickstart/understanding-helloworld.md)
 
 ## Exercise
 **Workbook**: [Hello World](/assets/pdf/Hello_World_Lab.pdf)

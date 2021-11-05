@@ -46,7 +46,7 @@ async function createTestProject(projectSpec: ProjectSpecBase): Promise<string> 
   await createProject(tmpdir, projectSpec);
 
   // Install dependencies
-  childProcess.execSync('npm i', {cwd: projectDir});
+  childProcess.execSync(`npm i`, {cwd: projectDir});
 
   await Codegen.run(['-l', projectDir]);
   await Build.run(['-l', projectDir]);
@@ -57,17 +57,21 @@ async function createTestProject(projectSpec: ProjectSpecBase): Promise<string> 
 describe('Cli publish', () => {
   let projectDir: string;
 
-  afterEach(() => {
-    promisify(rimraf)(projectDir);
+  afterEach(async () => {
+    try {
+      await promisify(rimraf)(projectDir);
+    } catch (e) {
+      console.warn('Failed to clean up tmp dir after test');
+    }
   });
 
-  it('should not allow uploading a v0.0.1 spec version project', async () => {
+  it.skip('should not allow uploading a v0.0.1 spec version project', async () => {
     projectDir = await createTestProject(projectSpecV0_0_1);
 
     await expect(uploadToIpfs(ipfsEndpoint, projectDir)).rejects.toBeDefined();
   });
 
-  it('should upload appropriate files to IPFS', async () => {
+  it.skip('should upload appropriate files to IPFS', async () => {
     projectDir = await createTestProject(projectSpecV0_2_0);
     const cid = await uploadToIpfs(ipfsEndpoint, projectDir);
 

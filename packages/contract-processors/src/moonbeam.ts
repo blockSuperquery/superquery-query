@@ -1,12 +1,12 @@
 // Copyright 2020-2021 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import {EventFragment, FunctionFragment, Interface, Result} from '@ethersproject/abi';
+import {Interface, Result} from '@ethersproject/abi';
 import {Log, TransactionResponse} from '@ethersproject/abstract-provider';
 import {BigNumber} from '@ethersproject/bignumber';
-import {isHexString, hexStripZeros, hexDataSlice} from '@ethersproject/bytes';
-import {id} from '@ethersproject/hash';
+import {hexDataSlice} from '@ethersproject/bytes';
 import {ApiPromise} from '@polkadot/api';
+import {EthTransaction, EvmLog, ExitReason} from '@polkadot/types/interfaces';
 import {
   SubqlDatasourceProcessor,
   SubqlCustomDatasource,
@@ -15,6 +15,8 @@ import {
   SubstrateEvent,
   SecondLayerHandlerProcessor,
   SubstrateExtrinsic,
+  SubqlCustomHandler,
+  SubqlMapping,
 } from '@subql/types';
 import {plainToClass} from 'class-transformer';
 import {
@@ -26,24 +28,31 @@ import {
   IsEthereumAddress,
   IsString,
 } from 'class-validator';
+import {eventToTopic, functionToSighash, hexStringEq, stringNormalizedEq} from './utils';
 
 type TopicFilter = string | string[] | null | undefined;
 
-export type MoonbeamDatasource = SubqlCustomDatasource<'substrate/Moonbeam'>;
+export type MoonbeamDatasource = SubqlCustomDatasource<
+  'substrate/Moonbeam',
+  SubqlNetworkFilter,
+  SubqlMapping<SubqlCustomHandler>,
+  MoonbeamProcessorOptions
+>;
 
 export interface MoonbeamEventFilter {
-  address?: string;
   topics?: [TopicFilter, TopicFilter, TopicFilter, TopicFilter];
 }
 
 export interface MoonbeamCallFilter {
   from?: string;
-  to?: string;
   function?: string;
 }
 
 export type MoonbeamEvent<T extends Result = Result> = Log & {args?: T};
-export type MoonbeamCall<T extends Result = Result> = Omit<TransactionResponse, 'wait' | 'confirmations'> & {args?: T};
+export type MoonbeamCall<T extends Result = Result> = Omit<TransactionResponse, 'wait' | 'confirmations'> & {
+  args?: T;
+  success: boolean;
+};
 
 @ValidatorConstraint({name: 'topifFilterValidator', async: false})
 export class TopicFilterValidator implements ValidatorConstraintInterface {
@@ -67,10 +76,16 @@ export class TopicFilterValidator implements ValidatorConstraintInterface {
   }
 }
 
-class MoonbeamEventFilterImpl implements MoonbeamEventFilter {
+class MoonbeamProcessorOptions {
+  @IsOptional()
+  @IsString()
+  abi?: string;
   @IsOptional()
   @IsEthereumAddress()
   address?: string;
+}
+
+class MoonbeamEventFilterImpl implements MoonbeamEventFilter {
   @IsOptional()
   @Validate(TopicFilterValidator, {each: true})
   topics?: [TopicFilter, TopicFilter, TopicFilter, TopicFilter];
@@ -80,9 +95,6 @@ class MoonbeamCallFilterImpl implements MoonbeamCallFilter {
   @IsOptional()
   @IsEthereumAddress()
   from?: string;
-  @IsOptional()
-  @IsEthereumAddress()
-  to?: string;
   @IsOptional()
   @IsString()
   function?: string;
@@ -114,27 +126,8 @@ type ExecutionEvent = {
   from: string;
   to?: string; // Can be undefined for contract creation
   hash: string;
-  status: unknown;
+  status: ExitReason;
 };
-
-function eventToTopic(input: string): string {
-  if (isHexString(input)) return input;
-
-  return id(EventFragment.fromString(input).format());
-}
-
-function functionToSighash(input: string): string {
-  if (isHexString(input)) return input;
-
-  return hexDataSlice(id(FunctionFragment.fromString(input).format()), 0, 4);
-}
-
-function hexStringEq(a: string, b: string): boolean {
-  if (!isHexString(a) || !isHexString(b)) {
-    throw new Error('Inputs are not hex strings');
-  }
-  return hexStripZeros(a) === hexStripZeros(b);
-}
 
 function getExecutionEvent(extrinsic: SubstrateExtrinsic): ExecutionEvent {
   const executionEvent = extrinsic.events.find(
@@ -142,7 +135,7 @@ function getExecutionEvent(extrinsic: SubstrateExtrinsic): ExecutionEvent {
   );
 
   if (!executionEvent) {
-    throw new Error('Extrinsic is not an etheruem transaction');
+    throw new Error('eth execution failed');
   }
 
   const [from, to, hash, status] = executionEvent.event.data;
@@ -151,7 +144,7 @@ function getExecutionEvent(extrinsic: SubstrateExtrinsic): ExecutionEvent {
     from: from.toHex(),
     to: to.toHex(),
     hash: hash.toHex(),
-    status,
+    status: status as ExitReason,
   };
 }
 
@@ -168,41 +161,55 @@ async function getEtheruemBlockHash(api: ApiPromise, blockNumber: number): Promi
 
 const contractInterfaces: Record<string, Interface> = {};
 
-function buildInterface(ds: SubqlCustomDatasource, assets: Record<string, string>): Interface | undefined {
-  if (!ds.abi) {
+function buildInterface(ds: MoonbeamDatasource, assets: Record<string, string>): Interface | undefined {
+  const abi = ds.processor?.options?.abi;
+  if (!abi) {
     return;
   }
 
-  if (!ds.assets?.get(ds.abi)) {
-    throw new Error(`ABI named "${ds.abi}" not referenced in assets`);
+  if (!ds.assets?.get(abi)) {
+    throw new Error(`ABI named "${abi}" not referenced in assets`);
   }
 
   // This assumes that all datasources have a different abi name or they are the same abi
-  if (!contractInterfaces[ds.abi]) {
+  if (!contractInterfaces[abi]) {
     // Constructing the interface validates the ABI
     try {
-      contractInterfaces[ds.abi] = new Interface(assets[ds.abi]);
+      contractInterfaces[abi] = new Interface(assets[abi]);
     } catch (e) {
       (global as any).logger.error(`Unable to parse ABI: ${e.message}`);
       throw new Error('ABI is invalid');
     }
   }
 
-  return contractInterfaces[ds.abi];
+  return contractInterfaces[abi];
 }
 
-const EventProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Event, MoonbeamEventFilter, MoonbeamEvent> = {
+const EventProcessor: SecondLayerHandlerProcessor<
+  SubqlHandlerKind.Event,
+  MoonbeamEventFilter,
+  MoonbeamEvent,
+  MoonbeamDatasource
+> = {
   baseFilter: [{module: 'evm', method: 'Log'}],
   baseHandlerKind: SubqlHandlerKind.Event,
   async transformer(
     original: SubstrateEvent,
-    ds: SubqlCustomDatasource,
+    ds: MoonbeamDatasource,
     api: ApiPromise,
     assets: Record<string, string>
   ): Promise<MoonbeamEvent> {
     const [eventData] = original.event.data;
 
-    const {hash} = getExecutionEvent(original.extrinsic);
+    const baseFilter = Array.isArray(EventProcessor.baseFilter)
+      ? EventProcessor.baseFilter
+      : [EventProcessor.baseFilter];
+    const evmEvents =
+      original.extrinsic?.events.filter((evt) =>
+        baseFilter.find((filter) => filter.module === evt.event.section && filter.method === evt.event.method)
+      ) ?? [];
+
+    const {hash} = getExecutionEvent(original.extrinsic); // shouldn't failed here
 
     const log: MoonbeamEvent = {
       ...(eventData.toJSON() as unknown as RawEvent),
@@ -211,7 +218,7 @@ const EventProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Event, Moonbe
       transactionIndex: original.extrinsic?.idx ?? -1,
       transactionHash: hash,
       removed: false,
-      logIndex: original.idx, // Might be index of block not index relevant to tx
+      logIndex: evmEvents.indexOf(original),
     };
 
     try {
@@ -226,13 +233,19 @@ const EventProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Event, Moonbe
 
     return log;
   },
-  filterProcessor(filter: MoonbeamEventFilter, input: MoonbeamEvent): boolean {
-    if (filter.address && filter.address !== input.address) {
+  filterProcessor(filter: MoonbeamEventFilter | undefined, input: SubstrateEvent, ds: MoonbeamDatasource): boolean {
+    const [eventData] = input.event.data;
+    const rawEvent = eventData as EvmLog;
+
+    if (
+      ds.processor?.options?.address &&
+      !stringNormalizedEq(ds.processor.options.address, rawEvent.address.toString())
+    ) {
       return false;
     }
 
     // Follows bloom filters https://docs.ethers.io/v5/concepts/events/#events--filters
-    if (filter.topics) {
+    if (filter?.topics) {
       for (let i = 0; i < Math.min(filter.topics.length, 4); i++) {
         const topic = filter.topics[i];
         if (!topic) {
@@ -240,7 +253,7 @@ const EventProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Event, Moonbe
         }
 
         const topicArr = typeof topic === 'string' ? [topic] : topic;
-        if (!topicArr.find((singleTopic) => hexStringEq(eventToTopic(singleTopic), input.topics[i]))) {
+        if (!topicArr.find((singleTopic) => hexStringEq(eventToTopic(singleTopic), rawEvent.topics[i].toHex()))) {
           return false;
         }
       }
@@ -260,24 +273,37 @@ const EventProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Event, Moonbe
   },
 };
 
-const CallProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Call, MoonbeamCallFilter, MoonbeamCall> = {
+const CallProcessor: SecondLayerHandlerProcessor<
+  SubqlHandlerKind.Call,
+  MoonbeamCallFilter,
+  MoonbeamCall,
+  MoonbeamDatasource
+> = {
   baseFilter: [{module: 'ethereum', method: 'transact'}],
   baseHandlerKind: SubqlHandlerKind.Call,
   async transformer(
     original: SubstrateExtrinsic,
-    ds: SubqlCustomDatasource,
+    ds: MoonbeamDatasource,
     api: ApiPromise,
     assets: Record<string, string>
   ): Promise<MoonbeamCall> {
-    const [tx] = original.extrinsic.method.args;
+    const [tx] = original.extrinsic.method.args as [EthTransaction];
     const rawTx = tx.toJSON() as unknown as RawTransaction;
-
-    const {from, hash, to} = getExecutionEvent(original);
+    let from, hash, to, success;
+    try {
+      const executionEvent = getExecutionEvent(original);
+      from = executionEvent.from;
+      to = executionEvent.to;
+      hash = executionEvent.hash;
+      success = executionEvent.status.isSucceed;
+    } catch (e) {
+      success = false;
+    }
 
     const call: MoonbeamCall = {
       // Transaction properties
       from,
-      to,
+      to, // when contract creation
       nonce: rawTx.nonce,
       gasLimit: BigNumber.from(rawTx.gasLimit),
       gasPrice: BigNumber.from(rawTx.gasPrice),
@@ -291,6 +317,7 @@ const CallProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Call, Moonbeam
       blockNumber: original.block.block.header.number.toNumber(),
       blockHash: await getEtheruemBlockHash(api, original.block.block.header.number.toNumber()),
       timestamp: Math.round(original.block.timestamp.getTime() / 1000),
+      success,
     };
 
     try {
@@ -305,21 +332,33 @@ const CallProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Call, Moonbeam
 
     return call;
   },
-  filterProcessor(filter: MoonbeamCallFilter, input: MoonbeamCall): boolean {
-    if (filter.from && filter.from !== input.from) {
+  filterProcessor(filter: MoonbeamCallFilter | undefined, input: SubstrateExtrinsic, ds: MoonbeamDatasource): boolean {
+    try {
+      const {from, to} = getExecutionEvent(input);
+
+      if (filter?.from && !stringNormalizedEq(filter.from, from)) {
+        return false;
+      }
+
+      const [tx] = input.extrinsic.method.args as [EthTransaction];
+
+      // if `to` is null then we handle contract creation
+      if (
+        (ds.processor?.options?.address && !stringNormalizedEq(ds.processor.options.address, to)) ||
+        (ds.processor?.options?.address === null && !tx.action.isCreate)
+      ) {
+        return false;
+      }
+
+      if (filter?.function && tx.input.toHex().indexOf(functionToSighash(filter.function)) !== 0) {
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      (global as any).logger.warn('Unable to properly filter input');
       return false;
     }
-
-    // if `to` is null then we handle contract creation
-    if ((filter.to && filter.to !== input.to) || (filter.to === null && !!input.to)) {
-      return false;
-    }
-
-    if (filter.function && input.data.indexOf(functionToSighash(filter.function)) !== 0) {
-      return false;
-    }
-
-    return true;
   },
   filterValidator(filter?: MoonbeamCallFilter): void {
     if (!filter) return;
@@ -333,9 +372,22 @@ const CallProcessor: SecondLayerHandlerProcessor<SubqlHandlerKind.Call, Moonbeam
   },
 };
 
-export const MoonbeamDatasourcePlugin: SubqlDatasourceProcessor<'substrate/Moonbeam', SubqlNetworkFilter> = {
+export const MoonbeamDatasourcePlugin: SubqlDatasourceProcessor<
+  'substrate/Moonbeam',
+  SubqlNetworkFilter,
+  MoonbeamDatasource
+> = {
   kind: 'substrate/Moonbeam',
   validate(ds: MoonbeamDatasource, assets: Record<string, string>): void {
+    if (ds.processor.options) {
+      const opts = plainToClass(MoonbeamProcessorOptions, ds.processor.options);
+      const errors = validateSync(opts, {whitelist: true, forbidNonWhitelisted: true});
+      if (errors?.length) {
+        const errorMsgs = errors.map((e) => e.toString()).join('\n');
+        throw new Error(`Invalid Moonbeam call filter.\n${errorMsgs}`);
+      }
+    }
+
     buildInterface(ds, assets); // Will throw if unable to construct
 
     return;
