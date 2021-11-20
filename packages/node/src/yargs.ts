@@ -29,6 +29,16 @@ export function getYargsOption() {
       demandOption: false,
       describe: 'Use local mode',
     },
+    'force-clean': {
+      type: 'boolean',
+      demandOption: false,
+      describe: 'Force clean the database, dropping project schemas and tables',
+    },
+    unsafe: {
+      type: 'boolean',
+      demandOption: false,
+      describe: 'Allows usage of any built-in module within the sandbox',
+    },
     'batch-size': {
       demandOption: false,
       describe: 'Batch size of blocks to fetch in one round',
@@ -98,6 +108,13 @@ export function getYargsOption() {
       describe: 'Enable/disable proof of index',
       type: 'boolean',
       default: false,
+    },
+    port: {
+      alias: 'p',
+      demandOption: false,
+      describe: 'The port the service will bind to',
+      type: 'number',
+      default: 3000,
     },
   });
 }

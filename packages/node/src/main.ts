@@ -7,19 +7,30 @@ import { IndexerManager } from './indexer/indexer.manager';
 import { getLogger, NestLogger } from './utils/logger';
 import { argv } from './yargs';
 
+const logger = getLogger('subql-node');
+
 async function bootstrap() {
   const debug = argv('debug');
+  const port = argv('port') as number;
+  if (argv('unsafe')) {
+    logger.warn(
+      'UNSAFE MODE IS ENABLED. This is not recommended for most projects and will not be supported by our hosted service',
+    );
+  }
+
   try {
     const app = await NestFactory.create(AppModule, {
       logger: debug ? new NestLogger() : false,
     });
     await app.init();
+
     const indexerManager = app.get(IndexerManager);
     await indexerManager.start();
-    await app.listen(3000);
-    getLogger('subql-node').info('node started');
+    await app.listen(port);
+
+    logger.info(`node started on port: ${port}`);
   } catch (e) {
-    getLogger('subql-node').error(e, 'node failed to start');
+    logger.error(e, 'node failed to start');
     process.exit(1);
   }
 }
