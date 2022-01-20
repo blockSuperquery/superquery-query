@@ -9,15 +9,15 @@ import yargs from 'yargs/yargs';
 export function getYargsOption() {
   return yargs(hideBin(process.argv)).options({
     name: {
+      demandOption: true,
       alias: 'n',
       describe: 'Project name',
       type: 'string',
-      demandOption: true,
     },
     playground: {
+      demandOption: false,
       describe: 'Enable graphql playground',
       type: 'boolean',
-      demandOption: false,
     },
     'output-fmt': {
       demandOption: false,
@@ -33,6 +33,17 @@ export function getYargsOption() {
       default: 'info',
       choices: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
     },
+    'log-path': {
+      demandOption: false,
+      describe: 'Path to create log file e.g ./src/name.log',
+      type: 'string',
+    },
+    'log-rotate': {
+      demandOption: false,
+      describe: 'Rotate log files in directory specified by log-path',
+      type: 'boolean',
+      default: false,
+    },
     indexer: {
       demandOption: false,
       describe: 'Url that allows query to access indexer metadata',
@@ -42,6 +53,12 @@ export function getYargsOption() {
       demandOption: false,
       describe: 'Disable limits on query depth and allowable number returned query records',
       type: 'boolean',
+    },
+    port: {
+      alias: 'p',
+      demandOption: false,
+      describe: 'The port the service will bind to',
+      type: 'number',
     },
   });
 }

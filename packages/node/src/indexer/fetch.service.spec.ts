@@ -91,6 +91,7 @@ const mockDictionaryRet: Dictionary = {
     indexerHealthy: true,
     indexerNodeVersion: '0.16.1',
     queryNodeVersion: '0.6.0',
+    rowCountEstimate: [{ table: '', estimate: 0 }],
   },
   //simulate after last process height update to 1000
   batchBlocks: [1000],
@@ -107,6 +108,7 @@ const mockDictionaryNoBatches: Dictionary = {
     indexerHealthy: true,
     indexerNodeVersion: '0.16.1',
     queryNodeVersion: '0.6.0',
+    rowCountEstimate: [{ table: '', estimate: 0 }],
   },
   batchBlocks: [],
 };
@@ -122,6 +124,7 @@ const mockDictionaryBatches: Dictionary = {
     indexerHealthy: true,
     indexerNodeVersion: '0.16.1',
     queryNodeVersion: '0.6.0',
+    rowCountEstimate: [{ table: '', estimate: 0 }],
   },
   batchBlocks: [14000, 14200, 14300, 14500, 14600, 14700, 14800, 14900],
 };
@@ -229,6 +232,11 @@ describe('FetchService', () => {
   beforeEach(() => {
     apiService = mockApiService();
     project = testSubqueryProject();
+    (fetchBlocksBatches as jest.Mock).mockImplementation((api, blockArray) =>
+      blockArray.map((height) => ({
+        block: { block: { header: { number: { toNumber: () => height } } } },
+      })),
+    );
   });
 
   it('get finalized head when reconnect', async () => {
@@ -264,17 +272,12 @@ describe('FetchService', () => {
       batchSize,
     );
     (fetchService as any).latestFinalizedHeight = 1000;
-    const end = (fetchService as any).nextEndBlockHeight(100);
+    const end = (fetchService as any).nextEndBlockHeight(100, batchSize);
     expect(end).toEqual(100 + batchSize - 1);
   });
 
   it('loop until shutdown', async () => {
     const batchSize = 20;
-    (fetchBlocksBatches as jest.Mock).mockImplementation((api, blockArray) =>
-      blockArray.map((height) => ({
-        block: { block: { header: { number: { toNumber: () => height } } } },
-      })),
-    );
     const dictionaryService = new DictionaryService(project);
 
     const fetchService = createFetchService(
@@ -561,6 +564,6 @@ describe('FetchService', () => {
     await loopPromise;
 
     expect(baseHandlerFilters).toHaveBeenCalledTimes(1);
-    expect(getDsProcessor).toHaveBeenCalledTimes(2);
+    expect(getDsProcessor).toHaveBeenCalledTimes(3);
   }, 500000);
 });

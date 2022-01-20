@@ -8,7 +8,13 @@ import { blake2AsHex } from '@polkadot/util-crypto';
 import { GraphQLModelsRelationsEnums } from '@subql/common/graphql/types';
 import { Entity, Store } from '@subql/types';
 import { camelCase, flatten, upperFirst, isEqual } from 'lodash';
-import { QueryTypes, Sequelize, Transaction, Utils } from 'sequelize';
+import {
+  QueryTypes,
+  Sequelize,
+  Transaction,
+  UpsertOptions,
+  Utils,
+} from 'sequelize';
 import { NodeConfig } from '../configure/NodeConfig';
 import { modelsTypeToModelAttributes } from '../utils/graphql';
 import { getLogger } from '../utils/logger';
@@ -19,7 +25,11 @@ import {
   getFkConstraint,
   smartTags,
 } from '../utils/sync-helper';
-import { MetadataFactory, MetadataRepo } from './entities/Metadata.entity';
+import {
+  Metadata,
+  MetadataFactory,
+  MetadataRepo,
+} from './entities/Metadata.entity';
 import { PoiFactory, PoiRepo, ProofOfIndex } from './entities/Poi.entity';
 import { PoiService } from './poi.service';
 import { StoreOperations } from './StoreOperations';
@@ -80,7 +90,7 @@ export class StoreService {
 
       const [results] = await this.sequelize.query(
         `select e.enumlabel as enum_value
-         from pg_type t 
+         from pg_type t
          join pg_enum e on t.oid = e.enumtypid
          where t.typname = ?;`,
         { replacements: [enumTypeName] },
@@ -88,7 +98,7 @@ export class StoreService {
 
       if (results.length === 0) {
         await this.sequelize.query(
-          `CREATE TYPE ${enumTypeName} as ENUM (${e.values
+          `CREATE TYPE "${enumTypeName}" as ENUM (${e.values
             .map(() => '?')
             .join(',')});`,
           {
@@ -117,10 +127,10 @@ export class StoreService {
         e.description ? `\\n ${e.description}` : ''
       }`;
 
-      await this.sequelize.query(`COMMENT ON TYPE ${enumTypeName} IS E?`, {
+      await this.sequelize.query(`COMMENT ON TYPE "${enumTypeName}" IS E?`, {
         replacements: [comment],
       });
-      enumTypeMap.set(e.name, enumTypeName);
+      enumTypeMap.set(e.name, `"${enumTypeName}"`);
     }
     for (const model of this.modelsRelations.models) {
       const attributes = modelsTypeToModelAttributes(model, enumTypeMap);
@@ -164,7 +174,7 @@ export class StoreService {
           });
           extraQueries.push(
             commentConstraintQuery(
-              `${schema}.${rel.target.tableName}`,
+              `"${schema}"."${rel.target.tableName}"`,
               fkConstraint,
               tags,
             ),
@@ -189,7 +199,7 @@ export class StoreService {
           });
           extraQueries.push(
             commentConstraintQuery(
-              `${schema}.${rel.target.tableName}`,
+              `"${schema}"."${rel.target.tableName}"`,
               fkConstraint,
               tags,
             ),
@@ -224,20 +234,33 @@ export class StoreService {
     }
   }
 
+  async setMetadataBatch(
+    metadata: Metadata[],
+    options?: UpsertOptions<Metadata>,
+  ): Promise<void> {
+    await Promise.all(
+      metadata.map(({ key, value }) => this.setMetadata(key, value, options)),
+    );
+  }
+
   async setMetadata(
     key: string,
     value: string | number | boolean,
+    options?: UpsertOptions<Metadata>,
   ): Promise<void> {
-    assert(this.metaDataRepo, `model _metadata does not exist`);
-    await this.metaDataRepo.upsert({ key, value });
+    assert(this.metaDataRepo, `Model _metadata does not exist`);
+    await this.metaDataRepo.upsert({ key, value }, options);
   }
 
-  async setPoi(tx: Transaction, blockPoi: ProofOfIndex): Promise<void> {
-    assert(this.poiRepo, `model _poi does not exist`);
+  async setPoi(
+    blockPoi: ProofOfIndex,
+    options?: UpsertOptions<ProofOfIndex>,
+  ): Promise<void> {
+    assert(this.poiRepo, `Model _poi does not exist`);
     blockPoi.chainBlockHash = u8aToBuffer(blockPoi.chainBlockHash);
     blockPoi.hash = u8aToBuffer(blockPoi.hash);
     blockPoi.parentHash = u8aToBuffer(blockPoi.parentHash);
-    await this.poiRepo.upsert(blockPoi, { transaction: tx });
+    await this.poiRepo.upsert(blockPoi, options);
   }
 
   getOperationMerkleRoot(): Uint8Array {
@@ -365,6 +388,16 @@ group by
         await model.upsert(data, { transaction: this.tx });
         if (this.config.proofOfIndex) {
           this.operationStack.put(OperationType.Set, entity, data);
+        }
+      },
+      bulkCreate: async (entity: string, data: Entity[]): Promise<void> => {
+        const model = this.sequelize.model(entity);
+        assert(model, `model ${entity} not exists`);
+        await model.bulkCreate(data, { transaction: this.tx });
+        if (this.config.proofOfIndex) {
+          for (const item of data) {
+            this.operationStack.put(OperationType.Set, entity, item);
+          }
         }
       },
       remove: async (entity: string, id: string): Promise<void> => {

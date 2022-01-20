@@ -8,6 +8,20 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [0.18.0] - 2022-01-18
+### Added
+- Filter project templates by selected specVersion (#751)
+
+## [0.17.0] - 2022-01-13
+### Added
+- Warning and advice for use manifest specVersion v0.0.1 (#730)
+- Message for install git suggestion (#733)
+- Allow user to select templates when run `subql init` (#712)
+
+## [0.16.2] - 2021-12-16
+### Changed
+- Update subql/validator dependencies (#720)
+
 ## [0.16.1] - 2021-11-30
 ### Fixed
 - Remove auto generated enum types and interfaces (#680)
@@ -118,7 +132,10 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 - support subcommand codegen
 - support subcommand init
 
-[Unreleased]: https://github.com/subquery/subql/compare/cli/0.16.1...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/cli/0.18.0...HEAD
+[0.18.0]: https://github.com/subquery/subql/compare/cli/0.17.0...cli/0.18.0
+[0.17.0]: https://github.com/subquery/subql/compare/cli/0.16.2...cli/0.17.0
+[0.16.2]: https://github.com/subquery/subql/compare/cli/0.16.1...cli/0.16.2
 [0.16.1]: https://github.com/subquery/subql/compare/cli/0.16.0...cli/0.16.1
 [0.16.0]: https://github.com/subquery/subql/compare/cli/0.15.0...cli/0.16.0
 [0.15.0]: https://github.com/subquery/subql/compare/cli/0.14.0...cli/0.15.0

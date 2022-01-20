@@ -9,6 +9,15 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [0.4.2] - 2022-01-13
+### Changed
+- Version bump with subql/common 
+
+
+## [0.4.1] - 2021-12-16
+### Fixed 
+- Fix chain types checking when load from js (#720)
+
 ## [0.4.0] - 2021-11-19
 ### Added
 - Added ipfs-reader and update reader (#486)
@@ -32,5 +41,6 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 ### Added
 - init release: support validation of subquery project
 
-[Unreleased]: https://github.com/subquery/subql/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/subquery/subql/compare/query/0.4.0...query/0.4.1
 [0.4.0]: https://github.com/subquery/subql/compare/query/0.3.0...query/0.4.0

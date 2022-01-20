@@ -49,6 +49,7 @@ import PgBackwardRelationPlugin from './PgBackwardRelationPlugin';
 import {GetMetadataPlugin} from './GetMetadataPlugin';
 import {smartTagsPlugin} from './smartTagsPlugin';
 import {makeAddInflectorsPlugin} from 'graphile-utils';
+import PgAggregationPlugin from './PgAggregationPlugin';
 
 /* eslint-enable */
 
@@ -95,7 +96,7 @@ export const pgDefaultPlugins = [
   PgConnectionTotalCount,
 ];
 
-export const plugins = [
+const plugins = [
   ...defaultPlugins,
   ...pgDefaultPlugins,
   PgSimplifyInflectorPlugin,
@@ -103,6 +104,7 @@ export const plugins = [
   ConnectionFilterPlugin,
   smartTagsPlugin,
   GetMetadataPlugin,
+  PgAggregationPlugin,
   makeAddInflectorsPlugin((inflectors) => {
     const {constantCase: oldConstantCase} = inflectors;
     const enumValues = new Set();
@@ -123,3 +125,5 @@ export const plugins = [
     };
   }, true),
 ];
+
+export {plugins};

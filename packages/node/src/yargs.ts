@@ -14,6 +14,7 @@ export function getYargsOption() {
       type: 'string',
     },
     'subquery-name': {
+      deprecated: true,
       demandOption: false,
       describe: 'Name of the subquery project',
       type: 'string',
@@ -25,6 +26,7 @@ export function getYargsOption() {
       type: 'string',
     },
     local: {
+      deprecated: true,
       type: 'boolean',
       demandOption: false,
       describe: 'Use local mode',
@@ -33,6 +35,11 @@ export function getYargsOption() {
       type: 'boolean',
       demandOption: false,
       describe: 'Force clean the database, dropping project schemas and tables',
+    },
+    'db-schema': {
+      demandOption: false,
+      describe: 'Db schema name of the project',
+      type: 'string',
     },
     unsafe: {
       type: 'boolean',
@@ -43,6 +50,12 @@ export function getYargsOption() {
       demandOption: false,
       describe: 'Batch size of blocks to fetch in one round',
       type: 'number',
+    },
+    'scale-batch-size': {
+      type: 'boolean',
+      demandOption: false,
+      describe: 'scale batch size based on memory usage',
+      default: false,
     },
     timeout: {
       demandOption: false,
@@ -114,7 +127,6 @@ export function getYargsOption() {
       demandOption: false,
       describe: 'The port the service will bind to',
       type: 'number',
-      default: 3000,
     },
   });
 }

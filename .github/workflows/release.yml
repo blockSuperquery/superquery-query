@@ -30,10 +30,10 @@ jobs:
         with:
           fetch-depth: 100
 
-      - uses: actions/setup-node@v1
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2
         with:
-          node-version: 14
-          registry-url: 'https://registry.npmjs.org'
+          node-version: 16
 
     #Identify changes
       - uses: marceloprado/has-changed-path@v1
@@ -101,14 +101,6 @@ jobs:
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish Cli
-        if: steps.changed-cli.outputs.changed == 'true'
-        uses: ./.github/actions/create-release
-        with:
-          package-path: packages/cli
-          repo-token: ${{ secrets.REPO_TOKEN }}
-          npm-token: ${{ secrets.NPM_TOKEN }}
-
       - name: Publish Node
         if: steps.changed-node.outputs.changed == 'true'
         uses: ./.github/actions/create-release
@@ -130,5 +122,13 @@ jobs:
         uses: ./.github/actions/create-release
         with:
           package-path: packages/validator
+          repo-token: ${{ secrets.REPO_TOKEN }}
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Cli
+        if: steps.changed-cli.outputs.changed == 'true'
+        uses: ./.github/actions/create-release
+        with:
+          package-path: packages/cli
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}

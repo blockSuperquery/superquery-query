@@ -6,12 +6,16 @@ import path from 'path';
 import { loadFromJsonOrYaml } from '@subql/common';
 import { last } from 'lodash';
 import { LevelWithSilent } from 'pino';
+import { getLogger } from '../utils/logger';
 import { assign } from '../utils/object';
+
+const logger = getLogger('configure');
 
 export interface IConfig {
   readonly configDir?: string;
   readonly subquery: string;
-  readonly subqueryName: string;
+  readonly subqueryName?: string;
+  readonly dbSchema?: string;
   readonly localMode: boolean;
   readonly batchSize: number;
   readonly timeout: number;
@@ -28,8 +32,8 @@ export interface IConfig {
   readonly mmrPath?: string;
 }
 
-export type MinConfig = Partial<Omit<IConfig, 'subqueryName' | 'subquery'>> &
-  Pick<IConfig, 'subqueryName' | 'subquery'>;
+export type MinConfig = Partial<Omit<IConfig, 'subquery'>> &
+  Pick<IConfig, 'subquery'>;
 
 const DEFAULT_CONFIG = {
   localMode: false,
@@ -52,7 +56,15 @@ export class NodeConfig implements IConfig {
   ): NodeConfig {
     const fileInfo = path.parse(filePath);
 
-    const config = assign(loadFromJsonOrYaml(filePath), configFromArgs, {
+    let configFromFile: unknown;
+    try {
+      configFromFile = loadFromJsonOrYaml(filePath);
+    } catch (e) {
+      logger.error(`failed to load config file, ${e}`);
+      throw e;
+    }
+
+    const config = assign(configFromFile, configFromArgs, {
       configDir: fileInfo.dir,
     }) as IConfig;
     return new NodeConfig(config);
@@ -129,6 +141,10 @@ export class NodeConfig implements IConfig {
 
   get mmrPath(): string {
     return this._config.mmrPath ?? `.mmr/${this.subqueryName}.mmr`;
+  }
+
+  get dbSchema(): string {
+    return this._config.dbSchema ?? this.subqueryName;
   }
 
   merge(config: Partial<IConfig>): this {

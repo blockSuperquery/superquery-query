@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2022-01-13
+### Changed
+- Version bump with subql/types 
+
+## [0.4.0] - 2021-12-16
+### Added
+- Support dictionary for custom datasource (#686)
+- Flyby fix, adjust timeout for test (#640) 
+
 ## [0.3.2] - 2021-11-23
 ### Fixed
 - Lock down class-transformer version (#654)
@@ -31,7 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Basic implementation for moonbeam evm processor (#547)
 
-[Unreleased]: https://github.com/subquery/subql/compare/contract-processors/0.3.1...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/contract-processors/0.4.1...HEAD
+[0.4.1]: https://github.com/subquery/subql/compare/contract-processors/0.4.0...contract-processors/0.4.1
+[0.4.0]: https://github.com/subquery/subql/compare/contract-processors/0.3.1...contract-processors/0.4.0
 [0.3.1]: https://github.com/subquery/subql/compare/contract-processors/0.3.0...contract-processors/0.3.1
 [0.3.0]: https://github.com/subquery/subql/compare/contract-processors/0.2.0...contract-processors/0.3.0
 
