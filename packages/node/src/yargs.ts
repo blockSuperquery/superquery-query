@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import { hideBin } from 'yargs/helpers';
@@ -10,7 +10,7 @@ export function getYargsOption() {
     subquery: {
       alias: 'f',
       demandOption: false,
-      describe: 'Local path of the subquery project',
+      describe: 'Local path or IPFS cid of the subquery project',
       type: 'string',
     },
     'subquery-name': {
@@ -121,6 +121,11 @@ export function getYargsOption() {
       describe: 'Enable/disable proof of index',
       type: 'boolean',
       default: false,
+    },
+    ipfs: {
+      demandOption: false,
+      describe: 'IPFS gateway endpoint',
+      type: 'string',
     },
     port: {
       alias: 'p',

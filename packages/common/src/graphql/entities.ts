@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'assert';
@@ -12,7 +12,6 @@ import {
   GraphQLNamedType,
   GraphQLObjectType,
   GraphQLOutputType,
-  GraphQLScalarType,
   GraphQLSchema,
   isEnumType,
   isInterfaceType,
@@ -22,7 +21,7 @@ import {
   isUnionType,
 } from 'graphql';
 import {DirectiveName} from './constant';
-import {buildSchema} from './schema';
+import {buildSchemaFromFile} from './schema';
 import {
   FieldScalar,
   GraphQLEntityField,
@@ -221,7 +220,7 @@ export function setJsonObjectType(
 }
 
 function getSchema(_schema: GraphQLSchema | string): GraphQLSchema {
-  return typeof _schema === 'string' ? buildSchema(_schema) : _schema;
+  return typeof _schema === 'string' ? buildSchemaFromFile(_schema) : _schema;
 }
 
 function getEnumsFromSchema(schema: GraphQLSchema): GraphQLEnumType[] {

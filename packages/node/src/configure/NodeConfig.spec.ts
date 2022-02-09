@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import * as path from 'path';
@@ -34,7 +34,7 @@ describe('NodeConfig', () => {
       NodeConfig.fromFile(path.join(__dirname, '../../test/config.toml')),
     ).toThrow();
     expect(() =>
-      NodeConfig.fromFile(path.join(__dirname, '../../test/notexist')),
-    ).toThrow();
+      NodeConfig.fromFile(path.join(__dirname, '../../test/con.toml')),
+    ).toThrow(/Load config from file/);
   });
 });

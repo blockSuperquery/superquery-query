@@ -1,6 +1,6 @@
 {
   "name": "@subql/contract-processors",
-  "version": "0.4.1",
+  "version": "0.4.2-2",
   "description": "",
   "homepage": "https://github.com/subquery/subql",
   "repository": "github:subquery/subql",
@@ -20,9 +20,10 @@
     "ethers": "^5.5.1"
   },
   "devDependencies": {
-    "moonbeam-types-bundle": "^1.2.7"
+    "moonbeam-types-bundle": "^2.0.3"
   },
   "peerDependencies": {
-    "@polkadot/api": "^6"
-  }
+    "@polkadot/api": "^7"
+  },
+  "stableVersion": "0.4.2-1"
 }

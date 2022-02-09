@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import fs from 'fs';
@@ -11,8 +11,12 @@ function loadBaseSchema(): GraphQLSchema {
   return extendSchema(schema, directives);
 }
 
-export function buildSchema(path: string): GraphQLSchema {
-  const src = new Source(fs.readFileSync(path).toString());
+export function buildSchemaFromFile(path: string): GraphQLSchema {
+  return buildSchemaFromString(fs.readFileSync(path).toString());
+}
+
+export function buildSchemaFromString(raw: string): GraphQLSchema {
+  const src = new Source(raw);
   const doc = parse(src);
   return buildSchemaFromDocumentNode(doc);
 }

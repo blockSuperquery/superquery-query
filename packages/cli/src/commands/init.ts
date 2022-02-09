@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import fs from 'fs';
@@ -124,9 +124,7 @@ export default class Init extends Command {
     }
 
     if (!useCustomTemplate) {
-      const networks = uniq(templates.map(({network}) => network));
-      networks.push('Other');
-
+      const networks = uniq(templates.map(({network}) => network)).sort();
       // Network selection
       await inquirer
         .prompt([
@@ -136,6 +134,7 @@ export default class Init extends Command {
             type: 'autocomplete',
             searchText: '',
             emptyText: 'Network not found',
+            pageSize: 20,
             source: filterInput(networks),
           },
         ])
@@ -232,11 +231,17 @@ export default class Init extends Command {
       cli.action.stop();
     }
 
+    const descriptionHint = defaultDescription.substring(0, 40).concat('...');
     project.author = await cli.prompt('Author', {required: true, default: defaultAuthor});
-    project.description = await cli.prompt('Description', {
-      required: false,
-      default: defaultDescription.substring(0, 40).concat('...'),
-    });
+    project.description = await cli
+      .prompt('Description', {
+        required: false,
+        default: descriptionHint,
+      })
+      .then((description) => {
+        return description === descriptionHint ? defaultDescription : description;
+      });
+
     project.version = await cli.prompt('Version', {required: true, default: defaultVersion});
     project.license = await cli.prompt('License', {required: true, default: defaultLicense});
 

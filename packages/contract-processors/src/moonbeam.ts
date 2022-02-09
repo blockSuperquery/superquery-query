@@ -1,6 +1,7 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
+import '@polkadot/api-augment';
 import {Interface, Result} from '@ethersproject/abi';
 import {Log, TransactionResponse} from '@ethersproject/abstract-provider';
 import {BigNumber} from '@ethersproject/bignumber';
@@ -169,7 +170,17 @@ function buildInterface(ds: MoonbeamDatasource, assets: Record<string, string>):
   if (!contractInterfaces[abi]) {
     // Constructing the interface validates the ABI
     try {
-      contractInterfaces[abi] = new Interface(assets[abi]);
+      let abiObj = JSON.parse(assets[abi]);
+
+      /*
+       * Allows parsing JSON artifacts as well as ABIs
+       * https://trufflesuite.github.io/artifact-updates/background.html#what-are-artifacts
+       */
+      if (!Array.isArray(abiObj) && abiObj.abi) {
+        abiObj = abiObj.abi;
+      }
+
+      contractInterfaces[abi] = new Interface(abiObj);
     } catch (e) {
       (global as any).logger.error(`Unable to parse ABI: ${e.message}`);
       throw new Error('ABI is invalid');
@@ -270,7 +281,10 @@ const EventProcessor: SecondLayerHandlerProcessor<
       conditions: [],
     };
     if (ds.processor?.options?.address) {
-      queryEntry.conditions.push({field: 'address', value: ds.processor?.options?.address});
+      queryEntry.conditions.push({
+        field: 'address',
+        value: ds.processor.options.address.toLowerCase(),
+      });
     } else {
       return;
     }
@@ -392,10 +406,10 @@ const CallProcessor: SecondLayerHandlerProcessor<
       conditions: [],
     };
     if (ds.processor?.options?.address) {
-      queryEntry.conditions.push({field: 'to', value: ds.processor?.options?.address});
+      queryEntry.conditions.push({field: 'to', value: ds.processor.options.address.toLowerCase()});
     }
     if (filter?.from) {
-      queryEntry.conditions.push({field: 'from', value: filter?.from});
+      queryEntry.conditions.push({field: 'from', value: filter.from.toLowerCase()});
     }
 
     if (filter?.function) {

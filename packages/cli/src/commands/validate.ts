@@ -1,9 +1,10 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import {Command, flags} from '@oclif/command';
 import {commonRules, Validator} from '@subql/validator';
 import chalk from 'chalk';
+import {IPFS_CLIENT_ENDPOINT} from '../constants';
 
 export default class Validate extends Command {
   static description = 'Check a folder or github repo is a validate subquery project';
@@ -12,14 +13,15 @@ export default class Validate extends Command {
     location: flags.string({char: 'l', description: 'local folder, github repo url or IPFS cid'}),
     ipfs: flags.string({
       description: 'IPFS gateway endpoint, used for validating projects on IPFS',
-      default: 'https://ipfs.thechainhub.com/api/v0',
+      default: IPFS_CLIENT_ENDPOINT,
     }),
     silent: flags.boolean(),
   };
 
+  //TODO, currently validation only work for complete project, ipfs deployment is not supported
   async run(): Promise<void> {
     const {flags} = this.parse(Validate);
-    const v = new Validator(flags.location ?? process.cwd(), {ipfs: flags.ipfs});
+    const v = await Validator.create(flags.location ?? process.cwd(), {ipfs: flags.ipfs});
     v.addRule(...commonRules);
 
     const reports = await v.getValidateReports();

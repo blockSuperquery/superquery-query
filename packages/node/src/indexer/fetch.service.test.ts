@@ -1,40 +1,43 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { ProjectManifestVersioned } from '@subql/common';
+import { ApiOptions } from '@polkadot/api/types';
 import { SubqlDatasourceKind, SubqlHandlerKind } from '@subql/types';
+import { GraphQLSchema } from 'graphql';
 import { NodeConfig } from '../configure/NodeConfig';
-import { SubqueryProject } from '../configure/project.model';
+import { SubqueryProject } from '../configure/SubqueryProject';
 import { ApiService } from './api.service';
 import { DictionaryService } from './dictionary.service';
 import { DsProcessorService } from './ds-processor.service';
 import { FetchService } from './fetch.service';
 
 function testSubqueryProject(): SubqueryProject {
-  const project = new SubqueryProject(
-    new ProjectManifestVersioned({
-      specVersion: '0.0.1',
-      network: {
-        endpoint: 'wss://polkadot.api.onfinality.io/public-ws',
-        types: {
-          TestType: 'u32',
+  return {
+    network: {
+      endpoint: 'wss://polkadot.api.onfinality.io/public-ws',
+    },
+    chainTypes: {
+      types: {
+        TestType: 'u32',
+      },
+    },
+    dataSources: [
+      {
+        name: 'runtime',
+        kind: SubqlDatasourceKind.Runtime,
+        startBlock: 1,
+        mapping: {
+          entryScript: '',
+          handlers: [{ handler: 'handleTest', kind: SubqlHandlerKind.Event }],
         },
       },
-      dataSources: [
-        {
-          name: 'runtime',
-          kind: SubqlDatasourceKind.Runtime,
-          startBlock: 1,
-          mapping: {
-            handlers: [{ handler: 'handleTest', kind: SubqlHandlerKind.Event }],
-          },
-        },
-      ],
-    } as any),
-    '',
-  );
-  return project;
+    ],
+    id: 'test',
+    root: './',
+    schema: new GraphQLSchema({}),
+    templates: [],
+  };
 }
 
 jest.setTimeout(200000);
@@ -72,12 +75,10 @@ describe('FetchService', () => {
 
     fetchService = await createFetchService(project, batchSize);
 
-    const api = fetchService.api;
-    const getMetaSpy = jest.spyOn(
-      (api as any)._rpcCore.state.getMetadata,
-      'raw',
-    );
-
+    const apiService = (fetchService as any).apiService as ApiService;
+    const apiOptions = (apiService as any).apiOption as ApiOptions;
+    const provider = apiOptions.provider;
+    const getSendSpy = jest.spyOn(provider, 'send');
     await fetchService.init();
     const loopPromise = fetchService.startLoop(1);
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -87,7 +88,10 @@ describe('FetchService', () => {
       }
     });
     await loopPromise;
-    expect(getMetaSpy).toBeCalledTimes(1);
+    const getMetadataCalls = getSendSpy.mock.calls.filter(
+      (call) => call[0] === 'state_getMetadata',
+    );
+    expect(getMetadataCalls.length).toBe(1);
   });
 
   it('fetch metadata two times when spec version changed in range', async () => {
@@ -96,11 +100,10 @@ describe('FetchService', () => {
 
     fetchService = await createFetchService(project, batchSize);
 
-    const api = fetchService.api;
-    const getMetaSpy = jest.spyOn(
-      (api as any)._rpcCore.state.getMetadata,
-      'raw',
-    );
+    const apiService = (fetchService as any).apiService as ApiService;
+    const apiOptions = (apiService as any).apiOption as ApiOptions;
+    const provider = apiOptions.provider;
+    const getSendSpy = jest.spyOn(provider, 'send');
 
     await fetchService.init();
     //29150
@@ -113,19 +116,23 @@ describe('FetchService', () => {
       }
     });
     await loopPromise;
-    expect(getMetaSpy).toBeCalledTimes(2);
+    const getMetadataCalls = getSendSpy.mock.calls.filter(
+      (call) => call[0] === 'state_getMetadata',
+    );
+    expect(getMetadataCalls.length).toBe(2);
   }, 100000);
 
   it('not use dictionary if dictionary is not defined in project config', async () => {
     const batchSize = 5;
     const project = testSubqueryProject();
     //filter is defined
-    project.projectManifest.asV0_0_1.dataSources = [
+    project.dataSources = [
       {
         name: 'runtime',
         kind: SubqlDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
+          entryScript: '',
           handlers: [
             {
               handler: 'handleEvent',
@@ -165,7 +172,7 @@ describe('FetchService', () => {
     const batchSize = 5;
     const project = testSubqueryProject();
     //set dictionary to a different network
-    project.projectManifest.asV0_0_1.network.dictionary =
+    project.network.dictionary =
       'https://api.subquery.network/sq/subquery/dictionary-polkadot';
 
     fetchService = await createFetchService(project, batchSize);
@@ -195,14 +202,15 @@ describe('FetchService', () => {
     const batchSize = 5;
     const project = testSubqueryProject();
     //set dictionary to a different network
-    project.projectManifest.asV0_0_1.network.dictionary =
+    project.network.dictionary =
       'https://api.subquery.network/sq/subquery/dictionary-polkadot';
-    project.projectManifest.asV0_0_1.dataSources = [
+    project.dataSources = [
       {
         name: 'runtime',
         kind: SubqlDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
+          entryScript: '',
           handlers: [
             {
               handler: 'handleBlock',
@@ -239,14 +247,15 @@ describe('FetchService', () => {
     const batchSize = 5;
     const project = testSubqueryProject();
     //set dictionary to a different network
-    project.projectManifest.asV0_0_1.network.dictionary =
+    project.network.dictionary =
       'https://api.subquery.network/sq/subquery/dictionary-polkadot';
-    project.projectManifest.asV0_0_1.dataSources = [
+    project.dataSources = [
       {
         name: 'runtime',
         kind: SubqlDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
+          entryScript: '',
           handlers: [
             {
               handler: 'handleEvent',
@@ -292,16 +301,16 @@ describe('FetchService', () => {
     const project = testSubqueryProject();
     //set dictionary to different network
     //set to a kusama network and use polkadot dictionary
-    project.projectManifest.asV0_0_1.network.endpoint =
-      'wss://kusama.api.onfinality.io/public-ws';
-    project.projectManifest.asV0_0_1.network.dictionary =
+    project.network.endpoint = 'wss://kusama.api.onfinality.io/public-ws';
+    project.network.dictionary =
       'https://api.subquery.network/sq/subquery/dictionary-polkadot';
-    project.projectManifest.asV0_0_1.dataSources = [
+    project.dataSources = [
       {
         name: 'runtime',
         kind: SubqlDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
+          entryScript: '',
           handlers: [
             {
               handler: 'handleEvent',

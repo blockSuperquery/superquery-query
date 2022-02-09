@@ -1,14 +1,13 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'assert';
-import path from 'path';
+import fs from 'fs';
 import { Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ApiPromise } from '@polkadot/api';
 import { hexToU8a, u8aEq } from '@polkadot/util';
 import {
-  buildSchema,
   getAllEntitiesRelations,
   isBlockHandlerProcessor,
   isCallHandlerProcessor,
@@ -21,14 +20,13 @@ import {
   SecondLayerHandlerProcessor,
   SubqlCustomDatasource,
   SubqlCustomHandler,
-  SubqlDatasource,
   SubqlHandlerKind,
   SubqlNetworkFilter,
   SubqlRuntimeHandler,
 } from '@subql/types';
-import { QueryTypes, Sequelize } from 'sequelize';
+import { QueryTypes, Sequelize, Transaction } from 'sequelize';
 import { NodeConfig } from '../configure/NodeConfig';
-import { SubqueryProject } from '../configure/project.model';
+import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
 import { SubqueryRepo } from '../entities';
 import { getLogger } from '../utils/logger';
 import { profiler } from '../utils/profiler';
@@ -36,6 +34,7 @@ import * as SubstrateUtil from '../utils/substrate';
 import { getYargsOption } from '../yargs';
 import { ApiService } from './api.service';
 import { DsProcessorService } from './ds-processor.service';
+import { DynamicDsService } from './dynamic-ds.service';
 import { MetadataFactory, MetadataRepo } from './entities/Metadata.entity';
 import { IndexerEvent } from './events';
 import { FetchService } from './fetch.service';
@@ -44,8 +43,9 @@ import { PoiService } from './poi.service';
 import { PoiBlock } from './PoiBlock';
 import { IndexerSandbox, SandboxService } from './sandbox.service';
 import { StoreService } from './store.service';
-import { BlockContent } from './types';
+import { ApiAt, BlockContent } from './types';
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version: packageVersion } = require('../../package.json');
 
 const DEFAULT_DB_SCHEMA = 'public';
@@ -58,8 +58,8 @@ const { argv } = getYargsOption();
 export class IndexerManager {
   private api: ApiPromise;
   private prevSpecVersion?: number;
-  private filteredDataSources: SubqlDatasource[];
   protected metadataRepo: MetadataRepo;
+  private filteredDataSources: SubqlProjectDs[];
 
   constructor(
     private storeService: StoreService,
@@ -72,9 +72,42 @@ export class IndexerManager {
     private nodeConfig: NodeConfig,
     private sandboxService: SandboxService,
     private dsProcessorService: DsProcessorService,
+    private dynamicDsService: DynamicDsService,
     @Inject('Subquery') protected subqueryRepo: SubqueryRepo,
     private eventEmitter: EventEmitter2,
   ) {}
+
+  async indexBlockForDs(
+    ds: SubqlProjectDs,
+    blockContent: BlockContent,
+    apiAt: ApiAt,
+    blockHeight: number,
+    tx: Transaction,
+  ): Promise<void> {
+    const vm = this.sandboxService.getDsProcessor(ds, apiAt);
+
+    // Inject function to create ds into vm
+    vm.freeze(
+      (templateName: string, args?: Record<string, unknown>) =>
+        this.dynamicDsService.createDynamicDatasource(
+          {
+            templateName,
+            args,
+            startBlock: blockHeight,
+          },
+          tx,
+        ),
+      'createDynamicDatasource',
+    );
+
+    if (isRuntimeDs(ds)) {
+      await this.indexBlockForRuntimeDs(vm, ds.mapping.handlers, blockContent);
+    } else if (isCustomDs(ds)) {
+      await this.indexBlockForCustomDs(ds, vm, blockContent);
+    }
+
+    // TODO should we remove createDynamicDatasource from vm here?
+  }
 
   @profiler(argv.profiler)
   async indexBlock(blockContent: BlockContent): Promise<void> {
@@ -93,19 +126,19 @@ export class IndexerManager {
       // if parentBlockHash injected, which means we need to check runtime upgrade
       const apiAt = await this.apiService.getPatchedApi(
         block.block.hash,
+        block.block.header.number.unwrap().toNumber(),
         isUpgraded ? block.block.header.parentHash : undefined,
       );
+
+      // Run predefined data sources
       for (const ds of this.filteredDataSources) {
-        const vm = this.sandboxService.getDsProcessor(ds, apiAt);
-        if (isRuntimeDs(ds)) {
-          await this.indexBlockForRuntimeDs(
-            vm,
-            ds.mapping.handlers,
-            blockContent,
-          );
-        } else if (isCustomDs(ds)) {
-          await this.indexBlockForCustomDs(ds, vm, blockContent);
-        }
+        await this.indexBlockForDs(ds, blockContent, apiAt, blockHeight, tx);
+      }
+
+      // Run dynamic data sources, must be after predefined datasources
+      // FIXME if any new dynamic datasources are created here they wont be run for the current block
+      for (const ds of await this.dynamicDsService.getDynamicDatasources()) {
+        await this.indexBlockForDs(ds, blockContent, apiAt, blockHeight, tx);
       }
 
       await this.storeService.setMetadataBatch(
@@ -115,7 +148,6 @@ export class IndexerManager {
         ],
         { transaction: tx },
       );
-
       if (this.nodeConfig.proofOfIndex) {
         const operationHash = this.storeService.getOperationMerkleRoot();
         //check if operation is null, then poi will not be insert
@@ -125,7 +157,7 @@ export class IndexerManager {
             block.block.header.hash.toHex(),
             operationHash,
             await this.poiService.getLatestPoiBlockHash(),
-            this.project.path, //projectId // TODO, define projectId
+            this.project.id,
           );
           poiBlockHash = poiBlock.hash;
           await this.storeService.setPoi(poiBlock, { transaction: tx });
@@ -144,12 +176,13 @@ export class IndexerManager {
   }
 
   async start(): Promise<void> {
-    await this.dsProcessorService.validateCustomDs();
+    await this.dsProcessorService.validateProjectCustomDatasources();
     await this.fetchService.init();
     this.api = this.apiService.getApi();
     const schema = await this.ensureProject();
     await this.initDbSchema(schema);
     this.metadataRepo = await this.ensureMetadata(schema);
+    this.dynamicDsService.init(this.metadataRepo);
 
     if (this.nodeConfig.proofOfIndex) {
       await Promise.all([
@@ -158,7 +191,7 @@ export class IndexerManager {
       ]);
     }
 
-    let startHeight;
+    let startHeight: number;
     const lastProcessedHeight = await this.metadataRepo.findOne({
       where: { key: 'lastProcessedHeight' },
     });
@@ -216,8 +249,13 @@ export class IndexerManager {
           );
 
           logger.info('force cleaned schema and tables');
+
+          if (fs.existsSync(this.nodeConfig.mmrPath)) {
+            await fs.promises.unlink(this.nodeConfig.mmrPath);
+            logger.info('force cleaned file based mmr');
+          }
         } catch (err) {
-          logger.error(err, 'failed to force clean schema and tables');
+          logger.error(err, 'failed to force clean');
         }
         schema = await this.createProjectSchema();
       }
@@ -262,7 +300,7 @@ export class IndexerManager {
   }
 
   private async createProjectSchema(): Promise<string> {
-    let schema;
+    let schema: string;
     if (this.nodeConfig.localMode) {
       // create tables in default schema if local mode is enabled
       schema = DEFAULT_DB_SCHEMA;
@@ -278,9 +316,7 @@ export class IndexerManager {
   }
 
   private async initDbSchema(schema: string): Promise<void> {
-    const graphqlSchema = buildSchema(
-      path.join(this.project.path, this.project.schema),
-    );
+    const graphqlSchema = this.project.schema;
     const modelsRelations = getAllEntitiesRelations(graphqlSchema);
     await this.storeService.init(modelsRelations, schema);
   }
@@ -363,7 +399,7 @@ export class IndexerManager {
     return metadataRepo;
   }
 
-  private filterDataSources(processedHeight: number): SubqlDatasource[] {
+  private filterDataSources(processedHeight: number): SubqlProjectDs[] {
     let filteredDs = this.getDataSourcesForSpecName();
     if (filteredDs.length === 0) {
       logger.error(
@@ -411,7 +447,7 @@ export class IndexerManager {
     }
   }
 
-  private getDataSourcesForSpecName(): SubqlDatasource[] {
+  private getDataSourcesForSpecName(): SubqlProjectDs[] {
     return this.project.dataSources.filter(
       (ds) =>
         !ds.filter?.specName ||

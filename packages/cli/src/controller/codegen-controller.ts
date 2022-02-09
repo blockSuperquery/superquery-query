@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import fs from 'fs';
@@ -6,7 +6,6 @@ import path from 'path';
 import {promisify} from 'util';
 import {
   getAllEntitiesRelations,
-  loadProjectManifest,
   getAllJsonObjects,
   setJsonObjectType,
   getTypeByScalarName,
@@ -14,9 +13,12 @@ import {
   GraphQLJsonFieldType,
   GraphQLEntityIndex,
   getAllEnums,
+  loadProjectManifest,
+  ProjectManifestVersioned,
+  isCustomDs,
 } from '@subql/common';
 import ejs from 'ejs';
-import {upperFirst} from 'lodash';
+import {upperFirst, uniq} from 'lodash';
 import rimraf from 'rimraf';
 
 const MODEL_TEMPLATE_PATH = path.resolve(__dirname, '../template/model.ts.ejs');
@@ -24,12 +26,14 @@ const MODELS_INDEX_TEMPLATE_PATH = path.resolve(__dirname, '../template/models-i
 const TYPES_INDEX_TEMPLATE_PATH = path.resolve(__dirname, '../template/types-index.ts.ejs');
 const INTERFACE_TEMPLATE_PATH = path.resolve(__dirname, '../template/interface.ts.ejs');
 const ENUM_TEMPLATE_PATH = path.resolve(__dirname, '../template/enum.ts.ejs');
+const DYNAMIC_DATASOURCE_TEMPLATE_PATH = path.resolve(__dirname, '../template/datasource-templates.ts.ejs');
 const TYPE_ROOT_DIR = 'src/types';
 const MODEL_ROOT_DIR = 'src/types/models';
 const exportTypes = {
   models: false,
   interfaces: false,
   enums: false,
+  datasources: false,
 };
 
 // 4. Render entity data in ejs template and write it
@@ -186,11 +190,14 @@ export async function codegen(projectPath: string): Promise<void> {
   const interfacesPath = path.join(projectPath, TYPE_ROOT_DIR, `interfaces.ts`);
   await prepareDirPath(modelDir, true);
   await prepareDirPath(interfacesPath, false);
+
   const manifest = loadProjectManifest(projectPath);
+
   await generateJsonInterfaces(projectPath, path.join(projectPath, manifest.schema));
   await generateModels(projectPath, path.join(projectPath, manifest.schema));
   await generateEnums(projectPath, path.join(projectPath, manifest.schema));
-  if (exportTypes.interfaces || exportTypes.models || exportTypes.enums) {
+  await generateDatasourceTemplates(projectPath, manifest);
+  if (exportTypes.interfaces || exportTypes.models || exportTypes.enums || exportTypes.datasources) {
     try {
       await renderTemplate(TYPES_INDEX_TEMPLATE_PATH, path.join(projectPath, TYPE_ROOT_DIR, `index.ts`), {
         props: {
@@ -212,7 +219,7 @@ export async function generateModels(projectPath: string, schema: string): Promi
     const className = upperFirst(entity.name);
     const entityName = entity.name;
     const fields = processFields('entity', className, entity.fields, entity.indexes);
-    const importJsonInterfaces = fields.filter((field) => field.isJsonInterface).map((f) => f.type);
+    const importJsonInterfaces = uniq(fields.filter((field) => field.isJsonInterface).map((f) => f.type));
     const importEnums = fields.filter((field) => field.isEnum).map((f) => f.type);
     const indexedFields = fields.filter((field) => field.indexed && !field.isJsonInterface);
     const modelTemplate = {
@@ -258,4 +265,31 @@ export async function generateModels(projectPath: string, schema: string): Promi
     }
     console.log(`* Models index generated !`);
   }
+}
+
+export async function generateDatasourceTemplates(
+  projectPath: string,
+  projectManifest: ProjectManifestVersioned
+): Promise<void> {
+  if (!projectManifest.isV0_2_1) return;
+
+  const manifest = projectManifest.asV0_2_1;
+
+  if (!manifest.templates?.length) return;
+
+  try {
+    const props = manifest.templates.map((t) => ({
+      name: t.name,
+      args: isCustomDs(t) ? 'Record<string, unknown>' : undefined,
+    }));
+    await renderTemplate(DYNAMIC_DATASOURCE_TEMPLATE_PATH, path.join(projectPath, TYPE_ROOT_DIR, `datasources.ts`), {
+      props,
+    });
+
+    exportTypes.datasources = true;
+  } catch (e) {
+    console.error(e);
+    throw new Error(`Unable to generate datasource template constructors`);
+  }
+  console.log(`* Datasource template constructors generated !`);
 }

@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'assert';
@@ -226,7 +226,7 @@ export class StoreService {
     return blake2AsHex(enumName).substr(2, 10);
   }
 
-  setTransaction(tx: Transaction) {
+  setTransaction(tx: Transaction): void {
     this.tx = tx;
     tx.afterCommit(() => (this.tx = undefined));
     if (this.config.proofOfIndex) {

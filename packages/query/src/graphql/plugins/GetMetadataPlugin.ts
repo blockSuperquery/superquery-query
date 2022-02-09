@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'assert';
@@ -22,6 +22,7 @@ const METADATA_TYPES = {
   indexerHealthy: 'boolean',
   indexerNodeVersion: 'string',
   queryNodeVersion: 'string',
+  dynamicDatasources: 'string',
 };
 
 type MetaType = number | string | boolean;
@@ -126,6 +127,7 @@ export const GetMetadataPlugin = makeExtendSchemaPlugin((build, options) => {
         indexerNodeVersion: String
         queryNodeVersion: String
         rowCountEstimate: [TableEstimate]
+        dynamicDatasources: String
       }
       extend type Query {
         _metadata: _Metadata

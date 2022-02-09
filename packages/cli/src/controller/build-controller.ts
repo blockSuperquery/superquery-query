@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import webpack, {Configuration} from 'webpack';
@@ -68,8 +68,7 @@ export async function runWebpack(
       if (stats.hasErrors()) {
         const info = stats.toJson();
 
-        reject(info.errors[0]);
-        this.log(info.errors[0].details);
+        reject(info.errors[0].details);
         return;
       }
 

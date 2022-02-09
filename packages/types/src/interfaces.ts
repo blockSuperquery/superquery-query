@@ -1,4 +1,4 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import {Extrinsic, EventRecord, SignedBlock} from '@polkadot/types/interfaces';
@@ -42,3 +42,5 @@ export interface SubstrateEvent extends EventRecord {
   extrinsic?: SubstrateExtrinsic;
   block: SubstrateBlock;
 }
+
+export type DynamicDatasourceCreator = (name: string, args: Record<string, unknown>) => Promise<void>;
