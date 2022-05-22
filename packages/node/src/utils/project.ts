@@ -5,27 +5,28 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
-  ChainTypes,
-  CustomDatasourceV0_2_0,
   GithubReader,
   IPFSReader,
-  isCustomDs,
-  loadChainTypes,
-  loadChainTypesFromJs,
   LocalReader,
-  parseChainTypes,
   Reader,
-  RuntimeDataSourceV0_0_1,
-  RuntimeDataSourceV0_2_0,
+  loadFromJsonOrYaml,
 } from '@subql/common';
 import {
-  SubqlRuntimeHandler,
-  SubqlCustomHandler,
-  SubqlHandler,
-  SubqlHandlerKind,
-} from '@subql/types';
+  ChainTypes,
+  CustomDatasourceV0_2_0,
+  isCustomDs,
+  // loadChainTypesFromJs,
+  parseChainTypes,
+  RuntimeDataSourceV0_0_1,
+  RuntimeDataSourceV0_2_0,
+  SubstrateRuntimeHandler,
+  SubstrateCustomHandler,
+  SubstrateHandler,
+  SubstrateHandlerKind,
+} from '@subql/common-substrate';
 import yaml from 'js-yaml';
 import tar from 'tar';
+import { NodeVM, VMScript } from 'vm2';
 import { SubqlProjectDs } from '../configure/SubqueryProject';
 
 export async function prepareProjectDir(projectPath: string): Promise<string> {
@@ -61,21 +62,19 @@ export function getProjectEntry(root: string): string {
 
     return projectEntryCache[pkgPath];
   } catch (err) {
-    throw new Error(
-      `can not find package.json within directory ${this.option.root}`,
-    );
+    throw new Error(`can not find package.json within directory ${root}`);
   }
 }
 
 export function isBaseHandler(
-  handler: SubqlHandler,
-): handler is SubqlRuntimeHandler {
-  return Object.values<string>(SubqlHandlerKind).includes(handler.kind);
+  handler: SubstrateHandler,
+): handler is SubstrateRuntimeHandler {
+  return Object.values<string>(SubstrateHandlerKind).includes(handler.kind);
 }
 
-export function isCustomHandler<K extends string, F>(
-  handler: SubqlHandler,
-): handler is SubqlCustomHandler<K, F> {
+export function isCustomHandler(
+  handler: SubstrateHandler,
+): handler is SubstrateCustomHandler {
   return !isBaseHandler(handler);
 }
 
@@ -237,12 +236,66 @@ async function makeTempDir(): Promise<string> {
   return fs.promises.mkdtemp(`${tmpDir}${sep}`);
 }
 
-export async function getProjectRoot(
-  reader: Reader,
-  path: string,
-): Promise<string> {
-  if (reader instanceof LocalReader) return path;
+export async function getProjectRoot(reader: Reader): Promise<string> {
+  if (reader instanceof LocalReader) return reader.root;
   if (reader instanceof IPFSReader || reader instanceof GithubReader) {
     return makeTempDir();
   }
+}
+
+export function loadChainTypes(file: string, projectRoot: string): unknown {
+  const { ext } = path.parse(file);
+  const filePath = path.resolve(projectRoot, file);
+  if (fs.existsSync(filePath)) {
+    if (ext === '.js' || ext === '.cjs') {
+      //load can be self contained js file, or js depend on node_module which will require project root
+      return loadChainTypesFromJs(filePath, projectRoot);
+    } else if (ext === '.yaml' || ext === '.yml' || ext === '.json') {
+      return loadFromJsonOrYaml(filePath);
+    } else {
+      throw new Error(`Extension ${ext} not supported`);
+    }
+  } else {
+    throw new Error(`Load from file ${file} not exist`);
+  }
+}
+
+export function loadChainTypesFromJs(
+  filePath: string,
+  requireRoot?: string,
+): unknown {
+  const { base, ext } = path.parse(filePath);
+  const root = requireRoot ?? path.dirname(filePath);
+  const vm = new NodeVM({
+    console: 'redirect',
+    wasm: false,
+    sandbox: {},
+    require: {
+      context: 'sandbox',
+      external: true,
+      builtin: ['path'],
+      root: root,
+      resolve: (moduleName: string) => {
+        return require.resolve(moduleName, { paths: [root] });
+      },
+    },
+    wrapper: 'commonjs',
+    sourceExtensions: ['js', 'cjs'],
+  });
+  let rawContent: unknown;
+  try {
+    const script = new VMScript(
+      `module.exports = require('${filePath}').default;`,
+      path.join(root, 'sandbox'),
+    ).compile();
+    rawContent = vm.run(script) as unknown;
+  } catch (err) {
+    throw new Error(`\n NodeVM error: ${err}`);
+  }
+  if (rawContent === undefined) {
+    throw new Error(
+      `There was no default export found from required ${base} file`,
+    );
+  }
+  return rawContent;
 }

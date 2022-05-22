@@ -4,14 +4,21 @@
 import fs from 'fs';
 import path from 'path';
 import { Injectable } from '@nestjs/common';
-import { isCustomDs } from '@subql/common';
 import {
-  SubqlCustomDatasource,
-  SubqlDatasource,
-  SubqlDatasourceProcessor,
-  SubqlNetworkFilter,
+  isCustomDs,
+  SubstrateCustomDataSource,
+  SubstrateDataSource,
+  SubstrateDatasourceProcessor,
+  SubstrateNetworkFilter,
+} from '@subql/common-substrate';
+import {
+  SecondLayerHandlerProcessor_0_0_0,
+  SecondLayerHandlerProcessor_1_0_0,
+  SubstrateCustomDatasource,
+  SubstrateHandlerKind,
 } from '@subql/types';
-import { VMScript } from '@subql/x-vm2';
+
+import { VMScript } from 'vm2';
 import { SubqueryProject } from '../configure/SubqueryProject';
 import { getLogger } from '../utils/logger';
 import { Sandbox } from './sandbox.service';
@@ -23,6 +30,63 @@ export interface DsPluginSandboxOption {
 }
 
 const logger = getLogger('ds-sandbox');
+
+export function isSecondLayerHandlerProcessor_0_0_0<
+  K extends SubstrateHandlerKind,
+  F,
+  E,
+  DS extends SubstrateCustomDatasource = SubstrateCustomDatasource,
+>(
+  processor:
+    | SecondLayerHandlerProcessor_0_0_0<K, F, E, DS>
+    | SecondLayerHandlerProcessor_1_0_0<K, F, E, DS>,
+): processor is SecondLayerHandlerProcessor_0_0_0<K, F, E, DS> {
+  // Exisiting datasource processors had no concept of specVersion, therefore undefined is equivalent to 0.0.0
+  return processor.specVersion === undefined;
+}
+
+export function isSecondLayerHandlerProcessor_1_0_0<
+  K extends SubstrateHandlerKind,
+  F,
+  E,
+  DS extends SubstrateCustomDatasource = SubstrateCustomDatasource,
+>(
+  processor:
+    | SecondLayerHandlerProcessor_0_0_0<K, F, E, DS>
+    | SecondLayerHandlerProcessor_1_0_0<K, F, E, DS>,
+): processor is SecondLayerHandlerProcessor_1_0_0<K, F, E, DS> {
+  return processor.specVersion === '1.0.0';
+}
+
+export function asSecondLayerHandlerProcessor_1_0_0<
+  K extends SubstrateHandlerKind,
+  F,
+  E,
+  DS extends SubstrateCustomDatasource = SubstrateCustomDatasource,
+>(
+  processor:
+    | SecondLayerHandlerProcessor_0_0_0<K, F, E, DS>
+    | SecondLayerHandlerProcessor_1_0_0<K, F, E, DS>,
+): SecondLayerHandlerProcessor_1_0_0<K, F, E, DS> {
+  if (isSecondLayerHandlerProcessor_1_0_0(processor)) {
+    return processor;
+  }
+
+  if (!isSecondLayerHandlerProcessor_0_0_0(processor)) {
+    throw new Error('Unsupported ds processor version');
+  }
+
+  return {
+    ...processor,
+    specVersion: '1.0.0',
+    filterProcessor: (params) =>
+      processor.filterProcessor(params.filter, params.input, params.ds),
+    transformer: (params) =>
+      processor
+        .transformer(params.input, params.ds, params.api, params.assets)
+        .then((res) => [res]),
+  };
+}
 
 export class DsPluginSandbox extends Sandbox {
   constructor(option: DsPluginSandboxOption) {
@@ -38,8 +102,8 @@ export class DsPluginSandbox extends Sandbox {
 
   getDsPlugin<
     D extends string,
-    T extends SubqlNetworkFilter,
-  >(): SubqlDatasourceProcessor<D, T> {
+    T extends SubstrateNetworkFilter,
+  >(): SubstrateDatasourceProcessor<D, T> {
     return this.run(this.script);
   }
 }
@@ -47,11 +111,16 @@ export class DsPluginSandbox extends Sandbox {
 @Injectable()
 export class DsProcessorService {
   private processorCache: {
-    [entry: string]: SubqlDatasourceProcessor<string, SubqlNetworkFilter>;
+    [entry: string]: SubstrateDatasourceProcessor<
+      string,
+      SubstrateNetworkFilter
+    >;
   } = {};
   constructor(private project: SubqueryProject) {}
 
-  async validateCustomDs(datasources: SubqlCustomDatasource[]): Promise<void> {
+  async validateCustomDs(
+    datasources: SubstrateCustomDataSource[],
+  ): Promise<void> {
     for (const ds of datasources) {
       const processor = this.getDsProcessor(ds);
       /* Standard validation applicable to all custom ds and processors */
@@ -83,12 +152,14 @@ export class DsProcessorService {
   }
 
   async validateProjectCustomDatasources(): Promise<void> {
-    await this.validateCustomDs((this.project.dataSources as SubqlDatasource[]).filter(isCustomDs));
+    await this.validateCustomDs(
+      (this.project.dataSources as SubstrateDataSource[]).filter(isCustomDs),
+    );
   }
 
-  getDsProcessor<D extends string, T extends SubqlNetworkFilter>(
-    ds: SubqlCustomDatasource<string, T>,
-  ): SubqlDatasourceProcessor<D, T> {
+  getDsProcessor<D extends string, T extends SubstrateNetworkFilter>(
+    ds: SubstrateCustomDataSource<string, T>,
+  ): SubstrateDatasourceProcessor<D, T> {
     if (!isCustomDs(ds)) {
       throw new Error(`data source is not a custom data source`);
     }
@@ -101,17 +172,19 @@ export class DsProcessorService {
       try {
         this.processorCache[ds.processor.file] = sandbox.getDsPlugin<D, T>();
       } catch (e) {
-        logger.error(`not supported ds @${ds.kind}`);
+        logger.error(e, `not supported ds @${ds.kind}`);
         throw e;
       }
     }
     return this.processorCache[
       ds.processor.file
-    ] as unknown as SubqlDatasourceProcessor<D, T>;
+    ] as unknown as SubstrateDatasourceProcessor<D, T>;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async getAssets(ds: SubqlCustomDatasource): Promise<Record<string, string>> {
+  async getAssets(
+    ds: SubstrateCustomDataSource,
+  ): Promise<Record<string, string>> {
     if (!isCustomDs(ds)) {
       throw new Error(`data source is not a custom data source`);
     }

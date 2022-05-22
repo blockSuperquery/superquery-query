@@ -3,7 +3,10 @@
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ApiOptions } from '@polkadot/api/types';
-import { SubqlDatasourceKind, SubqlHandlerKind } from '@subql/types';
+import {
+  SubstrateDatasourceKind,
+  SubstrateHandlerKind,
+} from '@subql/common-substrate';
 import { GraphQLSchema } from 'graphql';
 import { NodeConfig } from '../configure/NodeConfig';
 import { SubqueryProject } from '../configure/SubqueryProject';
@@ -25,11 +28,14 @@ function testSubqueryProject(): SubqueryProject {
     dataSources: [
       {
         name: 'runtime',
-        kind: SubqlDatasourceKind.Runtime,
+        kind: SubstrateDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
           entryScript: '',
-          handlers: [{ handler: 'handleTest', kind: SubqlHandlerKind.Event }],
+          handlers: [
+            { handler: 'handleTest', kind: SubstrateHandlerKind.Event },
+          ],
+          file: '',
         },
       },
     ],
@@ -129,14 +135,15 @@ describe('FetchService', () => {
     project.dataSources = [
       {
         name: 'runtime',
-        kind: SubqlDatasourceKind.Runtime,
+        kind: SubstrateDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
           entryScript: '',
+          file: '',
           handlers: [
             {
               handler: 'handleEvent',
-              kind: SubqlHandlerKind.Event,
+              kind: SubstrateHandlerKind.Event,
               filter: { module: 'staking', method: 'Reward' },
             },
           ],
@@ -207,14 +214,15 @@ describe('FetchService', () => {
     project.dataSources = [
       {
         name: 'runtime',
-        kind: SubqlDatasourceKind.Runtime,
+        kind: SubstrateDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
           entryScript: '',
+          file: '',
           handlers: [
             {
               handler: 'handleBlock',
-              kind: SubqlHandlerKind.Block,
+              kind: SubstrateHandlerKind.Block,
             },
           ],
         },
@@ -252,20 +260,21 @@ describe('FetchService', () => {
     project.dataSources = [
       {
         name: 'runtime',
-        kind: SubqlDatasourceKind.Runtime,
+        kind: SubstrateDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
           entryScript: '',
+          file: '',
           handlers: [
             {
               handler: 'handleEvent',
-              kind: SubqlHandlerKind.Event,
+              kind: SubstrateHandlerKind.Event,
               filter: { module: 'staking', method: 'Reward' },
             },
             //missing method will set useDictionary to false
             {
               handler: 'handleEvent',
-              kind: SubqlHandlerKind.Event,
+              kind: SubstrateHandlerKind.Event,
               filter: { module: 'staking' },
             },
           ],
@@ -303,18 +312,19 @@ describe('FetchService', () => {
     //set to a kusama network and use polkadot dictionary
     project.network.endpoint = 'wss://kusama.api.onfinality.io/public-ws';
     project.network.dictionary =
-      'https://api.subquery.network/sq/subquery/dictionary-polkadot';
+      'https://api.subquery.network/sq/subquery/polkadot-dictionary';
     project.dataSources = [
       {
         name: 'runtime',
-        kind: SubqlDatasourceKind.Runtime,
+        kind: SubstrateDatasourceKind.Runtime,
         startBlock: 1,
         mapping: {
           entryScript: '',
+          file: '',
           handlers: [
             {
               handler: 'handleEvent',
-              kind: SubqlHandlerKind.Event,
+              kind: SubstrateHandlerKind.Event,
               filter: { module: 'staking', method: 'Reward' },
             },
           ],

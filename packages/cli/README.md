@@ -23,7 +23,7 @@ $ npm install -g @subql/cli
 $ subql COMMAND
 running command...
 $ subql (-v|--version|version)
-@subql/cli/0.19.1-7 linux-x64 node-v16.13.2
+@subql/cli/0.29.1-0 linux-x64 node-v16.15.0
 $ subql --help [COMMAND]
 USAGE
   $ subql COMMAND
@@ -53,12 +53,12 @@ USAGE
   $ subql build
 
 OPTIONS
-  -l, --location=location                   local folder
+  -f, --location=location                   local folder
   -o, --output=output                       output folder of build e.g. dist
   --mode=(production|prod|development|dev)  [default: production]
 ```
 
-_See code: [lib/commands/build.js](https://github.com/packages/cli/blob/v0.19.1-7/lib/commands/build.js)_
+_See code: [lib/commands/build.js](https://github.com/packages/cli/blob/v0.29.1-0/lib/commands/build.js)_
 
 ## `subql codegen`
 
@@ -74,7 +74,7 @@ OPTIONS
   --file=file
 ```
 
-_See code: [lib/commands/codegen.js](https://github.com/packages/cli/blob/v0.19.1-7/lib/commands/codegen.js)_
+_See code: [lib/commands/codegen.js](https://github.com/packages/cli/blob/v0.29.1-0/lib/commands/codegen.js)_
 
 ## `subql help [COMMAND]`
 
@@ -109,14 +109,14 @@ OPTIONS
   -l, --location=location    local folder to create the project in
   --install-dependencies     Install dependencies as well
   --npm                      Force using NPM instead of yarn, only works with `install-dependencies` flag
-  --specVersion=0.0.1|0.2.0  [default: 0.2.0] The spec version to be used by the project
+  --specVersion=0.2.0|1.0.0  [default: 1.0.0] The spec version to be used by the project
 ```
 
-_See code: [lib/commands/init.js](https://github.com/packages/cli/blob/v0.19.1-7/lib/commands/init.js)_
+_See code: [lib/commands/init.js](https://github.com/packages/cli/blob/v0.29.1-0/lib/commands/init.js)_
 
 ## `subql migrate`
 
-Migrate Subquery project manifest v0.0.1 to v0.2.0
+Migrate Subquery project manifest to v1.0.0
 
 ```
 USAGE
@@ -128,7 +128,7 @@ OPTIONS
   --file=file
 ```
 
-_See code: [lib/commands/migrate.js](https://github.com/packages/cli/blob/v0.19.1-7/lib/commands/migrate.js)_
+_See code: [lib/commands/migrate.js](https://github.com/packages/cli/blob/v0.29.1-0/lib/commands/migrate.js)_
 
 ## `subql publish`
 
@@ -139,11 +139,11 @@ USAGE
   $ subql publish
 
 OPTIONS
-  -l, --location=location  local folder
+  -f, --location=location  from project or manifest path
   --ipfs=ipfs              IPFS gateway endpoint
 ```
 
-_See code: [lib/commands/publish.js](https://github.com/packages/cli/blob/v0.19.1-7/lib/commands/publish.js)_
+_See code: [lib/commands/publish.js](https://github.com/packages/cli/blob/v0.29.1-0/lib/commands/publish.js)_
 
 ## `subql validate`
 
@@ -156,12 +156,12 @@ USAGE
 OPTIONS
   -l, --location=location  local folder, github repo url or IPFS cid
 
-  --ipfs=ipfs              [default: https://interipfs.thechaindata.com/api/v0] IPFS gateway endpoint, used for
+  --ipfs=ipfs              [default: https://ipfs.subquery.network/ipfs/api/v0] IPFS gateway endpoint, used for
                            validating projects on IPFS
 
   --silent
 ```
 
-_See code: [lib/commands/validate.js](https://github.com/packages/cli/blob/v0.19.1-7/lib/commands/validate.js)_
+_See code: [lib/commands/validate.js](https://github.com/packages/cli/blob/v0.29.1-0/lib/commands/validate.js)_
 
 <!-- commandsstop -->

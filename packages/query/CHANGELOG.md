@@ -8,6 +8,38 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.0.0] - 2022-05-11
+- Major release
+
+## [0.16.1] - 2022-05-06
+### Changed
+- Bump with `@subql/utils`
+
+## [0.16.0] - 2022-05-02
+### Added
+- Add utils package (#928)
+- Allow set query-complexity for query (#923)
+
+## [0.15.0] - 2022-04-26
+### Added
+- Add support for querying historical state (#859)
+
+## [0.14.1] - 2022-04-04
+### Changed
+- Bump with `subql/common`
+
+## [0.14.0] - 2022-04-04
+### Changed
+- move subscription to dedicate flag (#867)
+
+## [0.13.0] - 2022-03-22
+### Added
+- Add GraphQL subscription support (#846)
+
+## [0.12.0] - 2022-02-09
+### Added 
+- Add `dynamicDatasources` in metadata (#773)
+
 ## [0.11.0] - 2022-01-21
 ### Added 
 - Enable full aggregates support when `--unsafe`, and group-by only when `--unsafe=false` (#765)
@@ -96,7 +128,8 @@ Upgrade priority: High. This fix the entities name conflict issue, for users who
 - overwrite plugin to fix one to one unique key check
 - update query publish and docker build process
 
-[Unreleased]: https://github.com/subquery/subql/compare/query/0.11.0...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/query/0.12.0...HEAD
+[0.12.0]: https://github.com/subquery/subql/compare/query/0.11.0...query/0.12.0
 [0.11.0]: https://github.com/subquery/subql/compare/query/0.10.0...query/0.11.0
 [0.10.0]: https://github.com/subquery/subql/compare/query/0.9.0...query/0.10.0
 [0.9.0]: https://github.com/subquery/subql/compare/query/0.8.0...query/0.9.0

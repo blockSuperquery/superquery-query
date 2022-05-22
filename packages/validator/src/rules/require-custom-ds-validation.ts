@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import path from 'path';
-import {isCustomDs} from '@subql/common';
-import {SubqlDatasourceProcessor, SubqlNetworkFilter} from '@subql/types';
+import {isCustomDs, SubstrateProjectManifestVersioned} from '@subql/common-substrate';
+import {SubstrateDatasourceProcessor, SubstrateNetworkFilter} from '@subql/types';
 import {Context} from '../context';
 import {Rule, RuleType} from './rule';
 
@@ -15,9 +15,12 @@ export class RequireCustomDsValidation implements Rule {
   validate(ctx: Context): boolean {
     const schema = ctx.data.schema;
 
-    if (schema.isV0_2_0 || schema.isV0_2_1) {
-      for (const customDs of schema.dataSources.filter(isCustomDs)) {
-        const processor: SubqlDatasourceProcessor<string, SubqlNetworkFilter> = require(path.resolve(
+    if (
+      (schema as SubstrateProjectManifestVersioned).isV0_2_0 ||
+      (schema as SubstrateProjectManifestVersioned).isV0_2_1
+    ) {
+      for (const customDs of (schema as SubstrateProjectManifestVersioned).dataSources.filter(isCustomDs)) {
+        const processor: SubstrateDatasourceProcessor<string, SubstrateNetworkFilter> = require(path.resolve(
           ctx.data.projectPath,
           customDs.processor.file
         )).default;

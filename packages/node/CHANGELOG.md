@@ -6,17 +6,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.27.2] - 2021-01-23
+## [1.0.0] - 2022-05-11
+- Major release
+
+## [0.35.2] - 2022-05-10
+Priority: High. Fixes events being handled multiple times, issue was introduced in 0.34.0
+
+### Fixed
+- Events being handled multiple times (#994)
+
+## [0.35.1] - 2022-05-06
+### Changed
+- Bump with `@subql/utils`
+
+## [0.35.0] - 2022-05-02
+### Added
+- Add utils package (#928)
+### Fixed
+- Handle undefined filters (#929)
+### Changed
+- Update polkadot 8.2.1 (#910)
+
+## [0.34.0] - 2022-04-26
+### Changed
+- Remove notify trigger if subscription disabled (#882)
+- Drop support for manifest v0.0.1 (#900)
+- Process block content in time secquence rather than ds/handler order (#853)
+### Fixed
+- Fixed the mmr inconsistent value issue, remove redundant code,  and set `blockOffset` value to the first store operation blockHeight -1 (#894)
+
+## [0.33.0] - 2022-04-06
+### Added
+- Add support for handle manifest 1.0.0 (#845)
+
+## [0.32.0] - 2022-04-04
+### Changed
+- Update to use `vm2`(#869)
+- Update Polkadot/api to 7.14.3 (#866)
+- move subscription to dedicate flag (#867)
+
+## [0.31.1] - 2022-03-23
+### Fixed
+- Fix subscription notification trigger name invalid issue(#862)
+
+## [0.31.0] - 2022-03-22
+### Changed
+- Update Polkadot/api to 7.12.1 (#849)
+### Added
+- Add Notification Trigger in order to support GraphQL subscription (#846)
+
+## [0.30.2] - 2022-03-15
+### Fixed
+- Fix unable able fetch with small batch size issue (#847)
+
+## [0.30.1] - 2022-03-10
+### Fixed
+- Fix enum sort order (#844)
+
+## [0.30.0] - 2022-03-01
+### Changed
+- Update imports, as substrate related components now will be imported from `subql/common-substrate`. (#781)
+
+## [0.29.1] - 2022-02-23
+### Fixed
+- Fix get default subquery name (#820)
+
+## [0.29.0] - 2022-02-23
+### Changed
+- Update Polkadot/api to 7.9.1 (#815)
+- Support node indexing from a manifest file (#800)
+
+## [0.28.2] - 2022-02-16
+### Changed
+- Update Polkadot/api to 7.8.1 ,in order to resolve previous release issue (#806)
+
+## [0.28.1] - 2022-02-15
+### Fixed
+- Fixed issue that node stop fetch block when set batch size to 1. (#802)
+
+## [0.28.0] - 2022-02-09
+### Added
+- Support running the indexer from locations other than the filesystem, and refactor `SubqueryProject` class (#511) 
+- Add support for index dynamic datasources (#773)
+- Add support for historical RPC methods that use BlockNumber (#788)
+### Changed
+- Update Polkadot/api to 7.7.1 (#787)
+### Fixed
+- Fixed mmr initialization start height issue (#600)
+
+
+## [0.27.2] - 2022-01-23
 ### Changed
 - Update Polkadot/api to 7.4.1 (#757)
 ### Fixed
 - Fix genesis hash validation for manifest v0.0.1 (#762)
 
-## [0.27.1] - 2021-01-18
+## [0.27.1] - 2022-01-18
 ### Changed
 - Ready endpoint return code (#750)
 
-## [0.27.0] - 2021-01-13
+## [0.27.0] - 2022-01-13
 ### Changed
 - Deprecate local mode (#725)
 - Update Polkadot/api to 7.3.1 (#745)
@@ -397,7 +486,14 @@ Priority: high for projects use dictionary
 ### Changed
 - bump @polkadot/api to 3.1.1
 
-[Unreleased]: https://github.com/subquery/subql/compare/node/0.27.2...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/node/0.30.1...HEAD
+[0.30.1]: https://github.com/subquery/subql/compare/node/0.30.0...node/0.30.1
+[0.30.0]: https://github.com/subquery/subql/compare/node/0.29.1...node/0.30.0
+[0.29.1]: https://github.com/subquery/subql/compare/node/0.29.0...node/0.29.1
+[0.29.0]: https://github.com/subquery/subql/compare/node/0.28.2...node/0.29.1
+[0.28.2]: https://github.com/subquery/subql/compare/node/0.28.1...node/0.28.2
+[0.28.1]: https://github.com/subquery/subql/compare/node/0.28.0...node/0.28.1
+[0.28.0]: https://github.com/subquery/subql/compare/node/0.27.2...node/0.28.0
 [0.27.2]: https://github.com/subquery/subql/compare/node/0.27.1...node/0.27.2
 [0.27.1]: https://github.com/subquery/subql/compare/node/0.27.0...node/0.27.1
 [0.27.0]: https://github.com/subquery/subql/compare/node/0.26.0...node/0.27.0

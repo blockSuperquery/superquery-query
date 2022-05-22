@@ -3,22 +3,21 @@
 
 import {lstatSync, readFileSync} from 'fs';
 import path from 'path';
-import {Command, flags} from '@oclif/command';
-import cli from 'cli-ux';
+import {Command, Flags} from '@oclif/core';
 import {runWebpack} from '../controller/build-controller';
 
 export default class Build extends Command {
   static description = 'Build this SubQuery project code';
 
   static flags = {
-    location: flags.string({char: 'l', description: 'local folder'}),
-    output: flags.string({char: 'o', description: 'output folder of build e.g. dist'}),
-    mode: flags.enum({options: ['production', 'prod', 'development', 'dev'], default: 'production'}),
+    location: Flags.string({char: 'f', description: 'local folder'}),
+    output: Flags.string({char: 'o', description: 'output folder of build e.g. dist'}),
+    mode: Flags.enum({options: ['production', 'prod', 'development', 'dev'], default: 'production'}),
   };
 
   async run(): Promise<void> {
     try {
-      const {flags} = this.parse(Build);
+      const {flags} = await this.parse(Build);
 
       const directory = flags.location ? path.resolve(flags.location) : process.cwd();
       const isDev = flags.mode === 'development' || flags.mode === 'dev';
@@ -52,10 +51,9 @@ export default class Build extends Command {
           delete buildEntries[i];
         }
       }
-
-      cli.action.start('Building and packing code');
+      this.log('Building and packing code ...');
       await runWebpack(buildEntries, directory, outputDir, isDev, true);
-      cli.action.stop();
+      this.log('Done!');
     } catch (e) {
       this.error(e);
     }

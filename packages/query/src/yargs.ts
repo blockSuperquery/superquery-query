@@ -54,10 +54,21 @@ export function getYargsOption() {
       describe: 'Disable limits on query depth and allowable number returned query records',
       type: 'boolean',
     },
+    subscription: {
+      demandOption: false,
+      describe: 'Enable subscription service',
+      type: 'boolean',
+      default: false,
+    },
     port: {
       alias: 'p',
       demandOption: false,
       describe: 'The port the service will bind to',
+      type: 'number',
+    },
+    'query-complexity': {
+      demandOption: false,
+      describe: 'Level of query complexity',
       type: 'number',
     },
   });

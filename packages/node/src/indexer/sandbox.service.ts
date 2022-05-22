@@ -3,10 +3,14 @@
 
 import path from 'path';
 import { Injectable } from '@nestjs/common';
-import { isRuntimeDataSourceV0_2_0, levelFilter } from '@subql/common';
-import { Store, SubqlDatasource } from '@subql/types';
-import { NodeVM, NodeVMOptions, VMScript } from '@subql/x-vm2';
+import {
+  isDatasourceV0_2_0,
+  SubstrateDataSource,
+} from '@subql/common-substrate';
+import { Store } from '@subql/types';
+import { levelFilter } from '@subql/utils';
 import { merge } from 'lodash';
+import { NodeVM, NodeVMOptions, VMScript } from 'vm2';
 import { NodeConfig } from '../configure/NodeConfig';
 import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
 import { getLogger } from '../utils/logger';
@@ -135,8 +139,8 @@ export class SandboxService {
     return processor;
   }
 
-  private getDataSourceEntry(ds: SubqlDatasource): string {
-    if (isRuntimeDataSourceV0_2_0(ds)) {
+  private getDataSourceEntry(ds: SubstrateDataSource): string {
+    if (isDatasourceV0_2_0(ds)) {
       return ds.mapping.file;
     } else {
       return getProjectEntry(this.project.root);

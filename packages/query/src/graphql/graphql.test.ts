@@ -7,6 +7,16 @@ import {getPostGraphileBuilder} from 'postgraphile-core';
 import {Config} from '../configure';
 import {plugins} from './plugins';
 
+jest.mock('../yargs', () => {
+  const original = jest.requireActual('../yargs');
+  return {
+    ...original,
+    getYargsOption: jest.fn().mockImplementation(() => {
+      return {argv: {name: 'test'}};
+    }),
+  };
+});
+
 describe('GraphqlModule', () => {
   const dbSchema = 'subquery_1';
 
@@ -137,7 +147,7 @@ describe('GraphqlModule', () => {
     `;
 
     const results = await server.executeOperation({query: GET_META});
-    expect(`${results.errors}`).toEqual(`ValidationError: Cannot query field "fakeMetadata" on type "_Metadata".`);
+    expect(`${results.errors}`).toEqual(`Cannot query field "fakeMetadata" on type "_Metadata".`);
   });
 
   it('resolve incorrect fields in db to null when queried from graphql', async () => {

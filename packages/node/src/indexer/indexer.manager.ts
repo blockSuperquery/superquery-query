@@ -8,23 +8,24 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ApiPromise } from '@polkadot/api';
 import { hexToU8a, u8aEq } from '@polkadot/util';
 import {
-  getAllEntitiesRelations,
   isBlockHandlerProcessor,
   isCallHandlerProcessor,
   isEventHandlerProcessor,
   isCustomDs,
   isRuntimeDs,
-} from '@subql/common';
+  SubstrateCustomDataSource,
+  SubstrateCustomHandler,
+  SubstrateHandlerKind,
+  SubstrateNetworkFilter,
+  SubstrateRuntimeHandlerInputMap,
+} from '@subql/common-substrate';
 import {
-  RuntimeHandlerInputMap,
-  SecondLayerHandlerProcessor,
-  SubqlCustomDatasource,
-  SubqlCustomHandler,
-  SubqlHandlerKind,
-  SubqlNetworkFilter,
-  SubqlRuntimeHandler,
+  SubstrateBlock,
+  SubstrateEvent,
+  SubstrateExtrinsic,
 } from '@subql/types';
-import { QueryTypes, Sequelize, Transaction } from 'sequelize';
+import { getAllEntitiesRelations } from '@subql/utils';
+import { QueryTypes, Sequelize } from 'sequelize';
 import { NodeConfig } from '../configure/NodeConfig';
 import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
 import { SubqueryRepo } from '../entities';
@@ -33,7 +34,11 @@ import { profiler } from '../utils/profiler';
 import * as SubstrateUtil from '../utils/substrate';
 import { getYargsOption } from '../yargs';
 import { ApiService } from './api.service';
-import { DsProcessorService } from './ds-processor.service';
+import {
+  asSecondLayerHandlerProcessor_1_0_0,
+  DsProcessorService,
+  isSecondLayerHandlerProcessor_0_0_0,
+} from './ds-processor.service';
 import { DynamicDsService } from './dynamic-ds.service';
 import { MetadataFactory, MetadataRepo } from './entities/Metadata.entity';
 import { IndexerEvent } from './events';
@@ -43,7 +48,7 @@ import { PoiService } from './poi.service';
 import { PoiBlock } from './PoiBlock';
 import { IndexerSandbox, SandboxService } from './sandbox.service';
 import { StoreService } from './store.service';
-import { ApiAt, BlockContent } from './types';
+import { BlockContent } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version: packageVersion } = require('../../package.json');
@@ -60,6 +65,8 @@ export class IndexerManager {
   private prevSpecVersion?: number;
   protected metadataRepo: MetadataRepo;
   private filteredDataSources: SubqlProjectDs[];
+  private blockOffset: number;
+  private schema: string;
 
   constructor(
     private storeService: StoreService,
@@ -77,38 +84,6 @@ export class IndexerManager {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  async indexBlockForDs(
-    ds: SubqlProjectDs,
-    blockContent: BlockContent,
-    apiAt: ApiAt,
-    blockHeight: number,
-    tx: Transaction,
-  ): Promise<void> {
-    const vm = this.sandboxService.getDsProcessor(ds, apiAt);
-
-    // Inject function to create ds into vm
-    vm.freeze(
-      (templateName: string, args?: Record<string, unknown>) =>
-        this.dynamicDsService.createDynamicDatasource(
-          {
-            templateName,
-            args,
-            startBlock: blockHeight,
-          },
-          tx,
-        ),
-      'createDynamicDatasource',
-    );
-
-    if (isRuntimeDs(ds)) {
-      await this.indexBlockForRuntimeDs(vm, ds.mapping.handlers, blockContent);
-    } else if (isCustomDs(ds)) {
-      await this.indexBlockForCustomDs(ds, vm, blockContent);
-    }
-
-    // TODO should we remove createDynamicDatasource from vm here?
-  }
-
   @profiler(argv.profiler)
   async indexBlock(blockContent: BlockContent): Promise<void> {
     const { block } = blockContent;
@@ -119,6 +94,7 @@ export class IndexerManager {
     });
     const tx = await this.sequelize.transaction();
     this.storeService.setTransaction(tx);
+    this.storeService.setBlockHeight(blockHeight);
 
     let poiBlockHash: Uint8Array;
     try {
@@ -130,16 +106,37 @@ export class IndexerManager {
         isUpgraded ? block.block.header.parentHash : undefined,
       );
 
-      // Run predefined data sources
-      for (const ds of this.filteredDataSources) {
-        await this.indexBlockForDs(ds, blockContent, apiAt, blockHeight, tx);
-      }
+      const datasources = this.filteredDataSources.concat(
+        ...(await this.dynamicDsService.getDynamicDatasources()),
+      );
 
-      // Run dynamic data sources, must be after predefined datasources
-      // FIXME if any new dynamic datasources are created here they wont be run for the current block
-      for (const ds of await this.dynamicDsService.getDynamicDatasources()) {
-        await this.indexBlockForDs(ds, blockContent, apiAt, blockHeight, tx);
-      }
+      await this.indexBlockData(
+        blockContent,
+        datasources,
+        (ds: SubqlProjectDs) => {
+          const vm = this.sandboxService.getDsProcessor(ds, apiAt);
+
+          // Inject function to create ds into vm
+          vm.freeze(
+            async (templateName: string, args?: Record<string, unknown>) => {
+              const newDs = await this.dynamicDsService.createDynamicDatasource(
+                {
+                  templateName,
+                  args,
+                  startBlock: blockHeight,
+                },
+                tx,
+              );
+
+              // Push the newly created dynamic ds to be processed this block on any future extrinsics/events
+              datasources.push(newDs);
+            },
+            'createDynamicDatasource',
+          );
+
+          return vm;
+        },
+      );
 
       await this.storeService.setMetadataBatch(
         [
@@ -148,9 +145,24 @@ export class IndexerManager {
         ],
         { transaction: tx },
       );
+      // Need calculate operationHash to ensure correct offset insert all time
+      const operationHash = this.storeService.getOperationMerkleRoot();
+      if (
+        !u8aEq(operationHash, NULL_MERKEL_ROOT) &&
+        this.blockOffset === undefined
+      ) {
+        await this.metadataRepo.upsert(
+          {
+            key: 'blockOffset',
+            value: blockHeight - 1,
+          },
+          { transaction: tx },
+        );
+        this.setBlockOffset(blockHeight - 1);
+      }
+
       if (this.nodeConfig.proofOfIndex) {
-        const operationHash = this.storeService.getOperationMerkleRoot();
-        //check if operation is null, then poi will not be insert
+        //check if operation is null, then poi will not be inserted
         if (!u8aEq(operationHash, NULL_MERKEL_ROOT)) {
           const poiBlock = PoiBlock.create(
             blockHeight,
@@ -161,6 +173,11 @@ export class IndexerManager {
           );
           poiBlockHash = poiBlock.hash;
           await this.storeService.setPoi(poiBlock, { transaction: tx });
+          this.poiService.setLatestPoiBlockHash(poiBlockHash);
+          await this.storeService.setMetadataBatch(
+            [{ key: 'lastPoiHeight', value: blockHeight }],
+            { transaction: tx },
+          );
         }
       }
     } catch (e) {
@@ -170,25 +187,25 @@ export class IndexerManager {
     await tx.commit();
     this.fetchService.latestProcessed(block.block.header.number.toNumber());
     this.prevSpecVersion = block.specVersion;
-    if (this.nodeConfig.proofOfIndex) {
-      this.poiService.setLatestPoiBlockHash(poiBlockHash);
-    }
   }
 
   async start(): Promise<void> {
     await this.dsProcessorService.validateProjectCustomDatasources();
     await this.fetchService.init();
     this.api = this.apiService.getApi();
-    const schema = await this.ensureProject();
-    await this.initDbSchema(schema);
-    this.metadataRepo = await this.ensureMetadata(schema);
+    this.schema = await this.ensureProject();
+    await this.initDbSchema();
+    this.metadataRepo = await this.ensureMetadata();
     this.dynamicDsService.init(this.metadataRepo);
 
     if (this.nodeConfig.proofOfIndex) {
-      await Promise.all([
-        this.poiService.init(schema),
-        this.mmrService.init(schema),
-      ]);
+      const blockOffset = await this.metadataRepo.findOne({
+        where: { key: 'blockOffset' },
+      });
+      if (blockOffset !== null && blockOffset.value !== null) {
+        this.setBlockOffset(Number(blockOffset.value));
+      }
+      await Promise.all([this.poiService.init(this.schema)]);
     }
 
     let startHeight: number;
@@ -215,13 +232,17 @@ export class IndexerManager {
     });
     this.filteredDataSources = this.filterDataSources(startHeight);
     this.fetchService.register((block) => this.indexBlock(block));
+  }
 
-    if (this.nodeConfig.proofOfIndex) {
-      void this.mmrService.syncFileBaseFromPoi().catch((err) => {
+  private setBlockOffset(offset: number): void {
+    this.blockOffset = offset;
+    logger.info(`set blockoffset to ${offset}`);
+    void this.mmrService
+      .syncFileBaseFromPoi(this.schema, this.blockOffset)
+      .catch((err) => {
         logger.error(err, 'failed to sync poi to mmr');
         process.exit(1);
       });
-    }
   }
 
   private async ensureProject(): Promise<string> {
@@ -315,14 +336,14 @@ export class IndexerManager {
     return schema;
   }
 
-  private async initDbSchema(schema: string): Promise<void> {
+  private async initDbSchema(): Promise<void> {
     const graphqlSchema = this.project.schema;
     const modelsRelations = getAllEntitiesRelations(graphqlSchema);
-    await this.storeService.init(modelsRelations, schema);
+    await this.storeService.init(modelsRelations, this.schema);
   }
 
-  private async ensureMetadata(schema: string): Promise<MetadataRepo> {
-    const metadataRepo = MetadataFactory(this.sequelize, schema);
+  private async ensureMetadata(): Promise<MetadataRepo> {
+    const metadataRepo = MetadataFactory(this.sequelize, this.schema);
 
     const project = await this.subqueryRepo.findOne({
       where: { name: this.nodeConfig.subqueryName },
@@ -340,6 +361,7 @@ export class IndexerManager {
       'chain',
       'specName',
       'genesisHash',
+      'chainId',
     ] as const;
 
     const entries = await metadataRepo.findAll({
@@ -355,13 +377,26 @@ export class IndexerManager {
 
     const { chain, genesisHash, specName } = this.apiService.networkMeta;
 
-    // blockOffset and genesisHash should only have been created once, never updated.
-    // If blockOffset is changed, will require re-index and re-sync poi.
-    if (!keyValue.blockOffset) {
-      const offsetValue = (this.getStartBlockFromDataSources() - 1).toString();
-      await metadataRepo.upsert({ key: 'blockOffset', value: offsetValue });
+    if (this.project.runner) {
+      await Promise.all([
+        metadataRepo.upsert({
+          key: 'runnerNode',
+          value: this.project.runner.node.name,
+        }),
+        metadataRepo.upsert({
+          key: 'runnerNodeVersion',
+          value: this.project.runner.node.version,
+        }),
+        metadataRepo.upsert({
+          key: 'runnerQuery',
+          value: this.project.runner.query.name,
+        }),
+        metadataRepo.upsert({
+          key: 'runnerQueryVersion',
+          value: this.project.runner.query.version,
+        }),
+      ]);
     }
-
     if (!keyValue.genesisHash) {
       if (project) {
         await metadataRepo.upsert({
@@ -375,9 +410,8 @@ export class IndexerManager {
       // Check if the configured genesisHash matches the currently stored genesisHash
       assert(
         // Configured project yaml genesisHash only exists in specVersion v0.2.0, fallback to api fetched genesisHash on v0.0.1
-        (this.project.network.genesisHash ?? genesisHash) ===
-          keyValue.genesisHash,
-        'Specified project manifest genesis hash does not match database stored genesis hash, consider cleaning project schema using --force-clean',
+        (this.project.network.chainId ?? genesisHash) === keyValue.genesisHash,
+        'Specified project manifest chain id / genesis hash does not match database stored genesis hash, consider cleaning project schema using --force-clean',
       );
     }
 
@@ -455,84 +489,201 @@ export class IndexerManager {
     );
   }
 
-  private async indexBlockForRuntimeDs(
-    vm: IndexerSandbox,
-    handlers: SubqlRuntimeHandler[],
+  private async indexBlockData(
     { block, events, extrinsics }: BlockContent,
+    dataSources: SubqlProjectDs[],
+    getVM: (d: SubqlProjectDs) => IndexerSandbox,
   ): Promise<void> {
-    for (const handler of handlers) {
-      switch (handler.kind) {
-        case SubqlHandlerKind.Block:
-          if (SubstrateUtil.filterBlock(block, handler.filter)) {
-            await vm.securedExec(handler.handler, [block]);
+    await this.indexBlockContent(block, dataSources, getVM);
+
+    // Run initialization events
+    const initEvents = events.filter((evt) => evt.phase.isInitialization);
+    for (const event of initEvents) {
+      await this.indexEvent(event, dataSources, getVM);
+    }
+
+    for (const extrinsic of extrinsics) {
+      await this.indexExtrinsic(extrinsic, dataSources, getVM);
+
+      // Process extrinsic events
+      const extrinsicEvents = events
+        .filter((e) => e.extrinsic?.idx === extrinsic.idx)
+        .sort((a, b) => a.idx - b.idx);
+
+      for (const event of extrinsicEvents) {
+        await this.indexEvent(event, dataSources, getVM);
+      }
+    }
+
+    // Run finalization events
+    const finalizeEvents = events.filter((evt) => evt.phase.isFinalization);
+    for (const event of finalizeEvents) {
+      await this.indexEvent(event, dataSources, getVM);
+    }
+  }
+
+  private async indexBlockContent(
+    block: SubstrateBlock,
+    dataSources: SubqlProjectDs[],
+    getVM: (d: SubqlProjectDs) => IndexerSandbox,
+  ): Promise<void> {
+    for (const ds of dataSources) {
+      await this.indexData(SubstrateHandlerKind.Block, block, ds, getVM(ds));
+    }
+  }
+
+  private async indexExtrinsic(
+    extrinsic: SubstrateExtrinsic,
+    dataSources: SubqlProjectDs[],
+    getVM: (d: SubqlProjectDs) => IndexerSandbox,
+  ): Promise<void> {
+    for (const ds of dataSources) {
+      await this.indexData(SubstrateHandlerKind.Call, extrinsic, ds, getVM(ds));
+    }
+  }
+
+  private async indexEvent(
+    event: SubstrateEvent,
+    dataSources: SubqlProjectDs[],
+    getVM: (d: SubqlProjectDs) => IndexerSandbox,
+  ): Promise<void> {
+    for (const ds of dataSources) {
+      await this.indexData(SubstrateHandlerKind.Event, event, ds, getVM(ds));
+    }
+  }
+
+  private async indexData<K extends SubstrateHandlerKind>(
+    kind: K,
+    data: SubstrateRuntimeHandlerInputMap[K],
+    ds: SubqlProjectDs,
+    vm: IndexerSandbox,
+  ): Promise<void> {
+    if (isRuntimeDs(ds)) {
+      const handlers = ds.mapping.handlers.filter(
+        (h) => h.kind === kind && FilterTypeMap[kind](data as any, h.filter),
+      );
+
+      for (const handler of handlers) {
+        await vm.securedExec(handler.handler, [data]);
+      }
+    } else if (isCustomDs(ds)) {
+      const handlers = this.filterCustomDsHandlers<K>(
+        ds,
+        data,
+        ProcessorTypeMap[kind],
+        (data, baseFilter) => {
+          switch (kind) {
+            case SubstrateHandlerKind.Block:
+              return !!SubstrateUtil.filterBlock(
+                data as SubstrateBlock,
+                baseFilter,
+              );
+            case SubstrateHandlerKind.Call:
+              return !!SubstrateUtil.filterExtrinsics(
+                [data as SubstrateExtrinsic],
+                baseFilter,
+              ).length;
+            case SubstrateHandlerKind.Event:
+              return !!SubstrateUtil.filterEvents(
+                [data as SubstrateEvent],
+                baseFilter,
+              ).length;
+            default:
+              throw new Error('Unsuported handler kind');
           }
-          break;
-        case SubqlHandlerKind.Call: {
-          const filteredExtrinsics = SubstrateUtil.filterExtrinsics(
-            extrinsics,
-            handler.filter,
-          );
-          for (const e of filteredExtrinsics) {
-            await vm.securedExec(handler.handler, [e]);
-          }
-          break;
-        }
-        case SubqlHandlerKind.Event: {
-          const filteredEvents = SubstrateUtil.filterEvents(
-            events,
-            handler.filter,
-          );
-          for (const e of filteredEvents) {
-            await vm.securedExec(handler.handler, [e]);
-          }
-          break;
-        }
-        default:
+        },
+      );
+
+      for (const handler of handlers) {
+        await this.transformAndExecuteCustomDs(ds, vm, handler, data);
       }
     }
   }
 
-  private async indexBlockForCustomDs(
-    ds: SubqlCustomDatasource<string, SubqlNetworkFilter>,
+  private filterCustomDsHandlers<K extends SubstrateHandlerKind>(
+    ds: SubstrateCustomDataSource<string, SubstrateNetworkFilter>,
+    data: SubstrateRuntimeHandlerInputMap[K],
+    baseHandlerCheck: ProcessorTypeMap[K],
+    baseFilter: (
+      data: SubstrateRuntimeHandlerInputMap[K],
+      baseFilter: any,
+    ) => boolean,
+  ): SubstrateCustomHandler[] {
+    const plugin = this.dsProcessorService.getDsProcessor(ds);
+
+    return ds.mapping.handlers
+      .filter((handler) => {
+        const processor = plugin.handlerProcessors[handler.kind];
+        if (baseHandlerCheck(processor)) {
+          processor.baseFilter;
+          return baseFilter(data, processor.baseFilter);
+        }
+        return false;
+      })
+      .filter((handler) => {
+        const processor = asSecondLayerHandlerProcessor_1_0_0(
+          plugin.handlerProcessors[handler.kind],
+        );
+
+        try {
+          return processor.filterProcessor({
+            filter: handler.filter,
+            input: data,
+            ds,
+          });
+        } catch (e) {
+          logger.error(e, 'Failed to run ds processer filter.');
+          throw e;
+        }
+      });
+  }
+
+  private async transformAndExecuteCustomDs<K extends SubstrateHandlerKind>(
+    ds: SubstrateCustomDataSource<string, SubstrateNetworkFilter>,
     vm: IndexerSandbox,
-    { block, events, extrinsics }: BlockContent,
+    handler: SubstrateCustomHandler,
+    data: SubstrateRuntimeHandlerInputMap[K],
   ): Promise<void> {
     const plugin = this.dsProcessorService.getDsProcessor(ds);
     const assets = await this.dsProcessorService.getAssets(ds);
 
-    const processData = async <K extends SubqlHandlerKind>(
-      processor: SecondLayerHandlerProcessor<K, unknown, unknown>,
-      handler: SubqlCustomHandler<string, Record<string, unknown>>,
-      filteredData: RuntimeHandlerInputMap[K][],
-    ): Promise<void> => {
-      const transformedData = await Promise.all(
-        filteredData
-          .filter((data) => processor.filterProcessor(handler.filter, data, ds))
-          .map((data) => processor.transformer(data, ds, this.api, assets)),
-      );
+    const processor = asSecondLayerHandlerProcessor_1_0_0(
+      plugin.handlerProcessors[handler.kind],
+    );
 
-      for (const data of transformedData) {
-        await vm.securedExec(handler.handler, [data]);
-      }
-    };
+    const transformedData = await processor
+      .transformer({
+        input: data,
+        ds,
+        filter: handler.filter,
+        api: this.api,
+        assets,
+      })
+      .catch((e) => {
+        logger.error(e, 'Failed to transform data with ds processor.');
+        throw e;
+      });
 
-    for (const handler of ds.mapping.handlers) {
-      const processor = plugin.handlerProcessors[handler.kind];
-      if (isBlockHandlerProcessor(processor)) {
-        await processData(processor, handler, [block]);
-      } else if (isCallHandlerProcessor(processor)) {
-        const filteredExtrinsics = SubstrateUtil.filterExtrinsics(
-          extrinsics,
-          processor.baseFilter,
-        );
-        await processData(processor, handler, filteredExtrinsics);
-      } else if (isEventHandlerProcessor(processor)) {
-        const filteredEvents = SubstrateUtil.filterEvents(
-          events,
-          processor.baseFilter,
-        );
-        await processData(processor, handler, filteredEvents);
-      }
-    }
+    await Promise.all(
+      transformedData.map((data) => vm.securedExec(handler.handler, [data])),
+    );
   }
 }
+
+type ProcessorTypeMap = {
+  [SubstrateHandlerKind.Block]: typeof isBlockHandlerProcessor;
+  [SubstrateHandlerKind.Event]: typeof isEventHandlerProcessor;
+  [SubstrateHandlerKind.Call]: typeof isCallHandlerProcessor;
+};
+
+const ProcessorTypeMap = {
+  [SubstrateHandlerKind.Block]: isBlockHandlerProcessor,
+  [SubstrateHandlerKind.Event]: isEventHandlerProcessor,
+  [SubstrateHandlerKind.Call]: isCallHandlerProcessor,
+};
+
+const FilterTypeMap = {
+  [SubstrateHandlerKind.Block]: SubstrateUtil.filterBlock,
+  [SubstrateHandlerKind.Event]: SubstrateUtil.filterEvent,
+  [SubstrateHandlerKind.Call]: SubstrateUtil.filterExtrinsic,
+};

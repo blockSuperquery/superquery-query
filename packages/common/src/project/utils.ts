@@ -1,43 +1,11 @@
 // Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  SecondLayerHandlerProcessor,
-  SubqlCustomDatasource,
-  SubqlDatasource,
-  SubqlDatasourceKind,
-  SubqlHandlerKind,
-  SubqlNetworkFilter,
-  SubqlRuntimeDatasource,
-} from '@subql/types';
-
+import fs from 'fs';
+import path from 'path';
+import {ValidatorConstraintInterface} from 'class-validator';
 import detectPort from 'detect-port';
-
-export function isBlockHandlerProcessor<T extends SubqlNetworkFilter, E>(
-  hp: SecondLayerHandlerProcessor<SubqlHandlerKind, T, unknown>
-): hp is SecondLayerHandlerProcessor<SubqlHandlerKind.Block, T, E> {
-  return hp.baseHandlerKind === SubqlHandlerKind.Block;
-}
-
-export function isEventHandlerProcessor<T extends SubqlNetworkFilter, E>(
-  hp: SecondLayerHandlerProcessor<SubqlHandlerKind, T, unknown>
-): hp is SecondLayerHandlerProcessor<SubqlHandlerKind.Event, T, E> {
-  return hp.baseHandlerKind === SubqlHandlerKind.Event;
-}
-
-export function isCallHandlerProcessor<T extends SubqlNetworkFilter, E>(
-  hp: SecondLayerHandlerProcessor<SubqlHandlerKind, T, unknown>
-): hp is SecondLayerHandlerProcessor<SubqlHandlerKind.Call, T, E> {
-  return hp.baseHandlerKind === SubqlHandlerKind.Call;
-}
-
-export function isCustomDs<F extends SubqlNetworkFilter>(ds: SubqlDatasource): ds is SubqlCustomDatasource<string, F> {
-  return ds.kind !== SubqlDatasourceKind.Runtime && !!(ds as SubqlCustomDatasource<string, F>).processor;
-}
-
-export function isRuntimeDs(ds: SubqlDatasource): ds is SubqlRuntimeDatasource {
-  return ds.kind === SubqlDatasourceKind.Runtime;
-}
+import {satisfies, valid} from 'semver';
 
 export async function findAvailablePort(startPort: number, range = 10): Promise<number> {
   for (let port = startPort; port <= startPort + range; port++) {
@@ -52,4 +20,43 @@ export async function findAvailablePort(startPort: number, range = 10): Promise<
   }
 
   return null;
+}
+
+export interface ProjectRootAndManifest {
+  root: string;
+  manifest: string;
+}
+
+// --subquery -f pass in can be project.yaml or project.path,
+// use this to determine its project root and manifest
+export function getProjectRootAndManifest(subquery: string): ProjectRootAndManifest {
+  const project = {} as ProjectRootAndManifest;
+  const stats = fs.statSync(subquery);
+  if (stats.isDirectory()) {
+    project.root = subquery;
+    project.manifest = path.resolve(subquery, 'project.yaml');
+  } else if (stats.isFile()) {
+    const {dir} = path.parse(subquery);
+    project.root = dir;
+    project.manifest = subquery;
+  }
+  project.root = path.resolve(project.root);
+  return project;
+}
+
+export function validateSemver(current: string, required: string): boolean {
+  return satisfies(current, required, {includePrerelease: true});
+}
+
+export class SemverVersionValidator implements ValidatorConstraintInterface {
+  validate(value: string | null | undefined): boolean {
+    const validated = valid(value, {includePrerelease: false});
+    if (validated === null || validated === undefined) {
+      return false;
+    }
+    return true;
+  }
+  defaultMessage(): string {
+    return 'Version number must follow Semver rules';
+  }
 }

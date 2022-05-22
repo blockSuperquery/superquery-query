@@ -9,7 +9,8 @@ export function getYargsOption() {
   return yargs(hideBin(process.argv)).options({
     subquery: {
       alias: 'f',
-      demandOption: false,
+      demandOption: true,
+      default: process.cwd(),
       describe: 'Local path or IPFS cid of the subquery project',
       type: 'string',
     },
@@ -45,6 +46,12 @@ export function getYargsOption() {
       type: 'boolean',
       demandOption: false,
       describe: 'Allows usage of any built-in module within the sandbox',
+    },
+    subscription: {
+      demandOption: false,
+      describe: 'Enable subscription by create notification triggers',
+      type: 'boolean',
+      default: false,
     },
     'batch-size': {
       demandOption: false,
@@ -132,6 +139,11 @@ export function getYargsOption() {
       demandOption: false,
       describe: 'The port the service will bind to',
       type: 'number',
+    },
+    'disable-historical': {
+      demandOption: false,
+      describe: 'Disable storing historical state entities',
+      type: 'boolean',
     },
   });
 }

@@ -8,9 +8,72 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.0.0] - 2022-05-11
+- Major release
+### Fixed
+- fix undefined file under chainTypes (#1010)
+
+## [0.29.0] - 2022-05-11
+### Changed
+- remove use manifest in codegen (#1001)
+
+## [0.28.0] - 2022-05-06
+### Fixed
+- Fix migrate missing chain types (#975)
+### Changed
+- Refactor init command and add network family (#979)
+
+## [0.27.0] - 2022-05-02
+### Added
+- Add utils package (#928)
+
+## [0.26.1] - 2022-04-27
+### Added
+- Support for Terra dynamic datasources (#899)
+### Changed
+- Output build errors (#901)
+
+## [0.26.0] - 2022-04-26
+### Added
+- Add manifest specVersion 1.0.0 template to `subql init` command  (#888)
+### Changed
+- Drop support for manifest 0.0.1 templates (#900)
+
+## [0.25.0] - 2022-04-12
+### Changed
+- Update @subql/common-terra to allow specifying a mantlemint endpoint (#885)
+
+## [0.24.0] - 2022-04-06
+### Added
+- Add support for manifest 1.0.0, migrate will now upgrade project to 1.0.0 (#845)
+
+## [0.23.0] - 2022-03-22
+### Added
+- Use `TerraProjectManifestVersioned` to support terra contract handling (#848)
+
+## [0.22.0] - 2022-03-01
+### Added
+- Support terra in command line, add terra template (#781)
+
+## [0.21.0] - 2022-02-24
+### Added
+- Support cli publish from a manifest file (#800)
+
+## [0.20.1] - 2022-02-15
+### Fixed
+- Patch release with @subql/validator version bump, in order to fix validation issue. 
+
+## [0.20.0] - 2022-02-09
+### Added
+- Add support for dynamic data sources (#773)
+- Add authentication for publish command, access token will read from `SUBQL_ACCESS_TOKEN` in environment or under `$HOME/.subql/SUBQL_ACCESS_TOKEN` (#778)
+### Fixed
+- Fix codegen importing jsonType interface multiple times (#784)
+- Fix cli build command issues (#789)
+
 ## [0.19.0] - 2022-01-21
 ### Added
-Allow use `subql build` self contained js as instructed by `exports` fields under`package.json` (#753)
+- Allow use `subql build` self contained js as instructed by `exports` fields under`package.json` (#753)
 ### Changed
 - Remove .github directory from new projects (#763)
 
@@ -138,7 +201,9 @@ Allow use `subql build` self contained js as instructed by `exports` fields unde
 - support subcommand codegen
 - support subcommand init
 
-[Unreleased]: https://github.com/subquery/subql/compare/cli/0.19.0...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/cli/0.20.1...HEAD
+[0.20.1]: https://github.com/subquery/subql/compare/cli/0.20.0...cli/0.20.1
+[0.20.0]: https://github.com/subquery/subql/compare/cli/0.19.0...cli/0.20.0
 [0.19.0]: https://github.com/subquery/subql/compare/cli/0.18.0...cli/0.19.0
 [0.18.0]: https://github.com/subquery/subql/compare/cli/0.17.0...cli/0.18.0
 [0.17.0]: https://github.com/subquery/subql/compare/cli/0.16.2...cli/0.17.0

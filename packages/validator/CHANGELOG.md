@@ -9,6 +9,30 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.0.0] - 2022-05-11
+- Major release
+
+## [0.6.0] - 2022-04-06
+### Added
+- Add validation to support manifest 1.0.0, add rules for runner (#845)
+
+## [0.5.0] - 2022-04-04
+### Added
+- Add terra project validation (#781)
+
+## [0.4.5] - 2022-02-24
+### Changed
+- Bump with subql/common release, as `reader` has been updated.
+
+## [0.4.4] - 2022-02-15
+### Fixed
+- Fix chainTypes validation when load from yaml or json (#804)
+
+## [0.4.3] - 2022-02-09
+### Changed
+- Move readers from validator to common (#551)
+- Include dynamic datasource in manifest v0.2.1 to custom-ds-validation (#773)
+
 ## [0.4.2] - 2022-01-13
 ### Changed
 - Version bump with subql/common 
@@ -41,6 +65,8 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 ### Added
 - init release: support validation of subquery project
 
-[Unreleased]: https://github.com/subquery/subql/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/subquery/subql/compare/query/0.4.2...query/0.4.3
+[0.4.2]: https://github.com/subquery/subql/compare/query/0.4.1...query/0.4.2
 [0.4.1]: https://github.com/subquery/subql/compare/query/0.4.0...query/0.4.1
 [0.4.0]: https://github.com/subquery/subql/compare/query/0.3.0...query/0.4.0

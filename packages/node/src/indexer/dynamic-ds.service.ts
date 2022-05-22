@@ -1,9 +1,9 @@
-// Copyright 2020-2021 OnFinality Limited authors & contributors
+// Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'assert';
 import { Injectable } from '@nestjs/common';
-import { isCustomDs, isRuntimeDs } from '@subql/common';
+import { isCustomDs, isRuntimeDs } from '@subql/common-substrate';
 import { Transaction } from 'sequelize/types';
 import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
 import { getLogger } from '../utils/logger';
@@ -38,7 +38,7 @@ export class DynamicDsService {
   async createDynamicDatasource(
     params: DatasourceParams,
     tx: Transaction,
-  ): Promise<void> {
+  ): Promise<SubqlProjectDs> {
     try {
       const ds = await this.getDatasource(params);
 
@@ -50,6 +50,8 @@ export class DynamicDsService {
 
       if (!this._datasources) this._datasources = [];
       this._datasources.push(ds);
+
+      return ds;
     } catch (e) {
       logger.error(e.message);
       process.exit(1);

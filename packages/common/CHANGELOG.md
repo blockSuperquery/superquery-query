@@ -8,6 +8,53 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.0.0] - 2022-05-11
+- Major release
+
+## [0.23.0] - 2022-05-11
+### Fixed
+- Fix toDeployment with ds processor assets (#1000)
+### Added
+- Add method to get path for manifest and schema, in order improve cli codegen (#1001)
+
+## [0.22.0] - 2022-05-02
+### Added
+- Add utils package (#928)
+
+## [0.21.2] - 2021-04-27
+### Fixed
+- Fix deps (#919)
+
+## [0.21.1] - 2021-04-26
+### Fixed
+- Fix Terra dictionary queries type (#893)
+
+## [0.21.0] - 2021-04-06
+### Add
+- Add types for manifest 1.0.0 (#845)
+
+## [0.20.0] - 2021-04-04
+### Changed
+- Update to use `vm2` v3.9.9 (#870)
+
+## [0.19.0] - 2021-03-01
+### Changed
+- Moved substrate components to `@subql/common-substrate`
+
+## [0.18.0] - 2021-02-24
+### Fixed 
+- Fix function call from calling itself (#808)
+### Changed
+- Update readers to support reader project from its manifest file (#800)
+
+## [0.17.0] - 2021-02-09
+### Added
+- Add manifest v0.2.1 to support dynamic data source
+### Changed 
+- Move readers from validator to common and use them for loading projects in the node (#511)
+### Fixed
+- Add missing interfaces to common classes (#782)
+
 ## [0.16.0] - 2021-01-13
 ### Added 
 - Add rowCountEstimate to Metadata (#736)
@@ -123,7 +170,8 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 ### Added
 - init commit
 
-[Unreleased]: https://github.com/subquery/subql/compare/common/0.16.0...HEAD
+[Unreleased]: https://github.com/subquery/subql/compare/common/0.17.0...HEAD
+[0.17.0]: https://github.com/subquery/subql/compare/common/0.16.0...common/0.17.0
 [0.16.0]: https://github.com/subquery/subql/compare/common/0.15.0...common/0.16.0
 [0.15.0]: https://github.com/subquery/subql/compare/common/0.14.1...common/0.15.0
 [0.14.1]: https://github.com/subquery/subql/compare/common/0.14.0...common/0.14.1
