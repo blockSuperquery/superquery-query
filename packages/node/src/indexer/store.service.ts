@@ -45,13 +45,12 @@ import {
   getVirtualFkTag,
   addTagsToForeignKeyMap,
   createExcludeConstraintQuery,
-  BTREE_GIST_EXTENSION_QUERY,
+  BTREE_GIST_EXTENSION_EXIST_QUERY,
 } from '../utils/sync-helper';
 import { getYargsOption } from '../yargs';
 import {
   Metadata,
   MetadataFactory,
-  MetadataModel,
   MetadataRepo,
 } from './entities/Metadata.entity';
 import { PoiFactory, PoiRepo, ProofOfIndex } from './entities/Poi.entity';
@@ -114,10 +113,18 @@ export class StoreService {
     }
   }
 
+  // eslint-disable-next-line complexity
   async syncSchema(schema: string): Promise<void> {
     const enumTypeMap = new Map<string, string>();
     if (this.historical) {
-      await this.sequelize.query(BTREE_GIST_EXTENSION_QUERY);
+      const [results] = await this.sequelize.query(
+        BTREE_GIST_EXTENSION_EXIST_QUERY,
+      );
+      if (results.length === 0) {
+        throw new Error(
+          'Btree_gist extension is required to enable historical data, contact DB admin for support',
+        );
+      }
     }
 
     for (const e of this.modelsRelations.enums) {
@@ -489,12 +496,15 @@ export class StoreService {
   }
 
   getOperationMerkleRoot(): Uint8Array {
-    this.operationStack.makeOperationMerkleTree();
-    const merkelRoot = this.operationStack.getOperationMerkleRoot();
-    if (merkelRoot === null) {
-      return NULL_MERKEL_ROOT;
+    if (this.config.proofOfIndex) {
+      this.operationStack.makeOperationMerkleTree();
+      const merkelRoot = this.operationStack.getOperationMerkleRoot();
+      if (merkelRoot === null) {
+        return NULL_MERKEL_ROOT;
+      }
+      return merkelRoot;
     }
-    return merkelRoot;
+    return NULL_MERKEL_ROOT;
   }
 
   private async getAllIndexFields(schema: string) {

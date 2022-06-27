@@ -6,6 +6,7 @@ import { Injectable, OnApplicationShutdown } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import { ApiPromise } from '@polkadot/api';
+import { RuntimeVersion } from '@polkadot/types/interfaces';
 import {
   isRuntimeDataSourceV0_2_0,
   RuntimeDataSourceV0_0_1,
@@ -19,11 +20,15 @@ import {
   SubstrateDataSource,
   SubstrateRuntimeHandlerFilter,
 } from '@subql/common-substrate';
-import { DictionaryQueryEntry, SubstrateCustomHandler } from '@subql/types';
+import {
+  DictionaryQueryEntry,
+  SubstrateBlock,
+  SubstrateCustomHandler,
+} from '@subql/types';
 
-import { isUndefined, range, sortBy, uniqBy } from 'lodash';
+import { isUndefined, range, sortBy, template, uniqBy } from 'lodash';
 import { NodeConfig } from '../configure/NodeConfig';
-import { SubqueryProject } from '../configure/SubqueryProject';
+import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
 import { getLogger } from '../utils/logger';
 import { profiler, profilerWrap } from '../utils/profiler';
 import { isBaseHandler, isCustomHandler } from '../utils/project';
@@ -32,8 +37,13 @@ import * as SubstrateUtil from '../utils/substrate';
 import { getYargsOption } from '../yargs';
 import { ApiService } from './api.service';
 import { BlockedQueue } from './BlockedQueue';
-import { Dictionary, DictionaryService } from './dictionary.service';
+import {
+  Dictionary,
+  DictionaryService,
+  SpecVersion,
+} from './dictionary.service';
 import { DsProcessorService } from './ds-processor.service';
+import { DynamicDsService } from './dynamic-ds.service';
 import { IndexerEvent } from './events';
 import { BlockContent } from './types';
 
@@ -44,6 +54,7 @@ const CHECK_MEMORY_INTERVAL = 60000;
 const HIGH_THRESHOLD = 0.85;
 const LOW_THRESHOLD = 0.6;
 const MINIMUM_BATCH_SIZE = 5;
+const SPEC_VERSION_BLOCK_GAP = 100;
 
 const { argv } = getYargsOption();
 
@@ -123,6 +134,9 @@ export class FetchService implements OnApplicationShutdown {
   private useDictionary: boolean;
   private dictionaryQueryEntries?: DictionaryQueryEntry[];
   private batchSizeScale: number;
+  private specVersionMap: SpecVersion[];
+  private currentRuntimeVersion: RuntimeVersion;
+  private templateDynamicDatasouces: SubqlProjectDs[];
 
   constructor(
     private apiService: ApiService,
@@ -130,6 +144,7 @@ export class FetchService implements OnApplicationShutdown {
     private project: SubqueryProject,
     private dictionaryService: DictionaryService,
     private dsProcessorService: DsProcessorService,
+    private dynamicDsService: DynamicDsService,
     private eventEmitter: EventEmitter2,
   ) {
     this.blockBuffer = new BlockedQueue<BlockContent>(
@@ -149,7 +164,11 @@ export class FetchService implements OnApplicationShutdown {
     return this.apiService.getApi();
   }
 
-  // TODO: if custom ds doesn't support dictionary, use baseFilter, if yes, let
+  async syncDynamicDatascourcesFromMeta(): Promise<void> {
+    this.templateDynamicDatasouces =
+      await this.dynamicDsService.getDynamicDatasources();
+  }
+
   getDictionaryQueryEntries(): DictionaryQueryEntry[] {
     const queryEntries: DictionaryQueryEntry[] = [];
 
@@ -161,7 +180,8 @@ export class FetchService implements OnApplicationShutdown {
         (ds as RuntimeDataSourceV0_0_1).filter.specName ===
           this.api.runtimeVersion.specName.toString(),
     );
-    for (const ds of dataSources) {
+
+    for (const ds of dataSources.concat(this.templateDynamicDatasouces)) {
       const plugin = isCustomDs(ds)
         ? this.dsProcessorService.getDsProcessor(ds)
         : undefined;
@@ -255,17 +275,27 @@ export class FetchService implements OnApplicationShutdown {
     return () => (stopper = true);
   }
 
-  async init(): Promise<void> {
+  updateDictionary() {
     this.dictionaryQueryEntries = this.getDictionaryQueryEntries();
     this.useDictionary =
       !!this.dictionaryQueryEntries?.length &&
       !!this.project.network.dictionary;
+  }
 
+  async init(): Promise<void> {
+    await this.syncDynamicDatascourcesFromMeta();
+    this.updateDictionary();
     this.eventEmitter.emit(IndexerEvent.UsingDictionary, {
       value: Number(this.useDictionary),
     });
     await this.getFinalizedBlockHead();
     await this.getBestBlockHead();
+
+    const specVersionResponse = await this.dictionaryService.getSpecVersion();
+    this.specVersionMap =
+      this.useDictionary && specVersionResponse !== undefined
+        ? specVersionResponse
+        : [];
   }
 
   @Interval(CHECK_MEMORY_INTERVAL)
@@ -339,7 +369,7 @@ export class FetchService implements OnApplicationShutdown {
   }
 
   async fillNextBlockBuffer(initBlockHeight: number): Promise<void> {
-    await this.fetchMeta(initBlockHeight);
+    await this.prefetchMeta(initBlockHeight);
 
     let startBlockHeight: number;
     let scaledBatchSize: number;
@@ -370,8 +400,6 @@ export class FetchService implements OnApplicationShutdown {
             scaledBatchSize,
             this.dictionaryQueryEntries,
           );
-          //TODO
-          // const specVersionMap = dictionary.specVersions;
           if (
             dictionary &&
             this.dictionaryValidation(dictionary, startBlockHeight)
@@ -385,6 +413,7 @@ export class FetchService implements OnApplicationShutdown {
                 ),
               );
             } else {
+              console.log(`dictioanry put number ${batchBlocks}`);
               this.blockNumberBuffer.putAll(batchBlocks);
               this.setLatestBufferedHeight(batchBlocks[batchBlocks.length - 1]);
             }
@@ -422,13 +451,13 @@ export class FetchService implements OnApplicationShutdown {
       }
 
       const bufferBlocks = await this.blockNumberBuffer.takeAll(takeCount);
-      const metadataChanged = await this.fetchMeta(
+      const specChanged = await this.specChanged(
         bufferBlocks[bufferBlocks.length - 1],
       );
       const blocks = await fetchBlocksBatches(
         this.api,
         bufferBlocks,
-        metadataChanged ? undefined : this.parentSpecVersion,
+        specChanged ? undefined : this.parentSpecVersion,
       );
       logger.info(
         `fetch block [${bufferBlocks[0]},${
@@ -442,8 +471,7 @@ export class FetchService implements OnApplicationShutdown {
     }
   }
 
-  @profiler(argv.profiler)
-  async fetchMeta(height: number): Promise<boolean> {
+  async getSpecFromApi(height: number): Promise<number> {
     const parentBlockHash = await this.api.rpc.chain.getBlockHash(
       Math.max(height - 1, 0),
     );
@@ -451,13 +479,91 @@ export class FetchService implements OnApplicationShutdown {
       parentBlockHash,
     );
     const specVersion = runtimeVersion.specVersion.toNumber();
+    return specVersion;
+  }
+
+  getSpecFromMap(
+    blockHeight: number,
+    specVersions: SpecVersion[],
+  ): number | undefined {
+    //return undefined if can not find inside range
+    const spec = specVersions.find(
+      (spec) => blockHeight >= spec.start && blockHeight <= spec.end,
+    );
+    return spec ? Number(spec.id) : undefined;
+  }
+
+  async getSpecVersion(blockHeight: number): Promise<number> {
+    let currentSpecVersion: number;
+    // we want to keep the specVersionMap in memory, and use it even useDictionary been disabled
+    // therefore instead of check .useDictionary, we check it length before use it.
+    if (this.specVersionMap && this.specVersionMap.length !== 0) {
+      currentSpecVersion = this.getSpecFromMap(
+        blockHeight,
+        this.specVersionMap,
+      );
+    }
+    if (currentSpecVersion === undefined) {
+      currentSpecVersion = await this.getSpecFromApi(blockHeight);
+      // Assume dictionary is synced
+      if (blockHeight + SPEC_VERSION_BLOCK_GAP < this.latestFinalizedHeight) {
+        const response = await this.dictionaryService.getSpecVersion();
+        if (response !== undefined) {
+          this.specVersionMap = response;
+        }
+      }
+    }
+    return currentSpecVersion;
+  }
+
+  async getRuntimeVersion(block: SubstrateBlock): Promise<RuntimeVersion> {
+    if (
+      !this.currentRuntimeVersion ||
+      this.currentRuntimeVersion.specVersion.toNumber() !== block.specVersion
+    ) {
+      this.currentRuntimeVersion = await this.api.rpc.state.getRuntimeVersion(
+        block.block.header.parentHash,
+      );
+    }
+    return this.currentRuntimeVersion;
+  }
+
+  @profiler(argv.profiler)
+  async specChanged(height: number): Promise<boolean> {
+    const specVersion = await this.getSpecVersion(height);
     if (this.parentSpecVersion !== specVersion) {
-      const blockHash = await this.api.rpc.chain.getBlockHash(height);
-      await SubstrateUtil.prefetchMetadata(this.api, blockHash);
+      await this.prefetchMeta(height);
       this.parentSpecVersion = specVersion;
       return true;
     }
     return false;
+  }
+
+  @profiler(argv.profiler)
+  async prefetchMeta(height: number) {
+    const blockHash = await this.api.rpc.chain.getBlockHash(height);
+    if (
+      this.parentSpecVersion &&
+      this.specVersionMap &&
+      this.specVersionMap.length !== 0
+    ) {
+      const parentSpecVersion = this.specVersionMap.find(
+        (spec) => Number(spec.id) === this.parentSpecVersion,
+      );
+      for (const specVersion of this.specVersionMap) {
+        if (
+          specVersion.start > parentSpecVersion.end &&
+          specVersion.start <= height
+        ) {
+          const blockHash = await this.api.rpc.chain.getBlockHash(
+            specVersion.start,
+          );
+          await SubstrateUtil.prefetchMetadata(this.api, blockHash);
+        }
+      }
+    } else {
+      await SubstrateUtil.prefetchMetadata(this.api, blockHash);
+    }
   }
 
   private nextEndBlockHeight(
@@ -470,6 +576,14 @@ export class FetchService implements OnApplicationShutdown {
       endBlockHeight = this.latestFinalizedHeight;
     }
     return endBlockHeight;
+  }
+
+  async resetForNewDs(blockHeight: number): Promise<void> {
+    await this.syncDynamicDatascourcesFromMeta();
+    this.updateDictionary();
+    this.blockBuffer.reset();
+    this.blockNumberBuffer.reset();
+    this.setLatestBufferedHeight(blockHeight);
   }
 
   private dictionaryValidation(

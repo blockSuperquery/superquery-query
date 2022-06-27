@@ -6,6 +6,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2022-06-22
+### Fixed
+- Handle when templates are undefined
+
+## [1.2.0] - 2022-06-22
+### Added
+- Use dictionary SpecVersion map (#1046)
+- Support dictionary for dynamic ds (#1110)
+### Changed
+- Split setup code from indexer manager to another service (#1092)
+### Fixed
+- Handle when specVersion query response is undefined (#1097)
+- Fix templates not being processed for manifest v1.0.0 (#1116)
+
+## [1.1.2] - 2022-06-02
+### Fixed
+- Fixed btree_gist extension, also provide docker postgres with extension (#1090)
+- Fixed handle multi datasources with different start block height (#1091)
+
+## [1.1.1] - 2022-06-01
+### Fixed
+- Fix disabling historical (#1085)
+- Fix benchmark logging (#1083)
+
+## [1.1.0] - 2022-05-31
+### Fixed
+- Move POI logic under option check (#1064)
+### Added
+- Add api to query file based mmr (#968)
+- Experimental feature: Support query by block number (#992)
+### Changed
+Remove `contract-processors` to [subquery/datasource-processors](https://github.com/subquery/datasource-processors), types improvements and support for datasource processors v1.0.0 (#1012)
+
 ## [1.0.0] - 2022-05-11
 - Major release
 

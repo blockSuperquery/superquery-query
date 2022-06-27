@@ -24,9 +24,7 @@ module.exports = {
     'packages/cli/src/**/*.ts',
     'packages/common/src/**/*.ts',
     'packages/common-substrate/src/**/*.ts',
-    'packages/common-terra/src/**/*.ts',
     'packages/node/src/**/*.ts',
-    'packages/node-terra/src/**/*.ts',
     'packages/utils/src/**/*.ts',
     'packages/validator/src/**/*.ts',
   ],
@@ -91,13 +89,8 @@ module.exports = {
   // A map from regular expressions to module names or to arrays of module names that allow to stub out resources with a single module
   // moduleNameMapper: {},
   moduleNameMapper: {
-    '^@subql/common-substrate': '<rootDir>/packages/common-substrate/src',
     '^@subql/common-substrate/(.*)$': '<rootDir>/packages/common-substrate/src/$1',
-    '^@subql/common-terra': '<rootDir>/packages/common-terra/src',
-    '^@subql/common-terra/(.*)$': '<rootDir>/packages/common-terra/src/$1',
-    '^@subql/common': '<rootDir>/packages/common/src',
     '^@subql/common/(.*)$': '<rootDir>/packages/common/src/$1',
-    '^@subql/utils': '<rootDir>/packages/utils/src',
     '^@subql/utils/(.*)$': '<rootDir>/packages/utils/src/$1',
   },
 

@@ -61,6 +61,7 @@ export class SubqueryProject {
     if (projectSchema === undefined) {
       throw new Error(`Get manifest from project path ${path} failed`);
     }
+
     const manifest = parseSubstrateProjectManifest(projectSchema);
 
     if (manifest.isV0_0_1) {
@@ -168,21 +169,13 @@ async function loadProjectFromManifest0_2_1(
   path: string,
   networkOverrides?: Partial<SubstrateProjectNetworkConfig>,
 ): Promise<SubqueryProject> {
-  const root = await getProjectRoot(reader);
   const project = await loadProjectFromManifestBase(
     projectManifest,
     reader,
     path,
     networkOverrides,
   );
-
-  project.templates = (
-    await updateDataSourcesV0_2_0(projectManifest.templates, reader, root)
-  ).map((ds, index) => ({
-    ...ds,
-    name: projectManifest.templates[index].name,
-  }));
-
+  project.templates = await loadProjectTemplates(projectManifest, reader);
   return project;
 }
 
@@ -200,6 +193,7 @@ async function loadProjectFromManifest1_0_0(
     path,
     networkOverrides,
   );
+  project.templates = await loadProjectTemplates(projectManifest, reader);
   project.runner = projectManifest.runner;
   if (!validateSemver(packageVersion, project.runner.node.version)) {
     throw new Error(
@@ -207,4 +201,23 @@ async function loadProjectFromManifest1_0_0(
     );
   }
   return project;
+}
+
+async function loadProjectTemplates(
+  projectManifest: ProjectManifestV0_2_1Impl | ProjectManifestV1_0_0Impl,
+  reader: Reader,
+): Promise<SubqlProjectDsTemplate[]> {
+  if (projectManifest.templates && projectManifest.templates.length !== 0) {
+    const root = await getProjectRoot(reader);
+
+    const dsTemplates = await updateDataSourcesV0_2_0(
+      projectManifest.templates,
+      reader,
+      root,
+    );
+    return dsTemplates.map((ds, index) => ({
+      ...ds,
+      name: projectManifest.templates[index].name,
+    }));
+  }
 }
