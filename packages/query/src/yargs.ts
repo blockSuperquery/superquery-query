@@ -81,9 +81,14 @@ export function getYargsOption() {
       describe: 'Query timeout in milliseconds',
       type: 'number',
     },
+    'query-explain': {
+      demandOption: false,
+      describe: 'Explain query in SQL statement',
+      type: 'boolean',
+    },
   });
 }
 
 export function argv(arg: string): unknown {
-  return yargv[arg];
+  return getYargsOption().argv[arg];
 }

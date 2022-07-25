@@ -8,6 +8,36 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.3.1] - 2022-07-13
+### Fixed
+- Added resolution to downgrade `node-fetch` as we have not support ES module (1184)
+- Added encodedURI for project deployment key (#1183)
+
+## [1.3.0] - 2022-07-12
+### Fixed
+- CLI deployment when no dictionary or matching endpoint is provided (#1180)
+### Added
+- Storing ipfs-cid locally (#1169)
+- New Flag `-d` added to `deployment:deploy` command allowing runner versions and endpoints to use default values from manifest (#1176)
+### Changed
+- Rename `deploy` command back to `deployment` (#1176)
+
+## [1.2.1] - 2022-07-06
+### Added
+- Add cosmos family to cli init (#1165)
+
+## [1.2.0] - 2022-07-05
+### Fixed
+- update common-avalanche,fix missing filter, asset and options (#1158)
+### Changed
+- Rename `deployment` command to `deploy`(#1149)
+
+## [1.1.1] - 2022-06-29
+### Fixed
+- Fixed typo in publish log (#1135)
+### Changed
+- Update init and publish tests with manifest 1.0.0 (#1114)
+
 ## [1.1.0] - 2022-06-22
 ### Changed
 - Increase publish project body size up to 50mb (#1100)

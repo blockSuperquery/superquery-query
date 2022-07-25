@@ -8,6 +8,16 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.3.0] - 2022-07-05
+### Changed
+- Try to catch error if create server failed, also give retry build schema (#1153)
+### Fixed
+- Fix tests (#1160)
+
+## [1.2.1] - 2022-06-27
+### Fixed
+- Fixed subql-query doesn't show all help docs issue (#1137)
+
 ## [1.2.0] - 2022-06-22
 ### Added
 - added `max-connection` and `query-timeout` configuration for pg pool (#1108)

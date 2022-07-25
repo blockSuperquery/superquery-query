@@ -12,9 +12,11 @@ import { Injectable, OnApplicationShutdown } from '@nestjs/common';
 import { DictionaryQueryCondition, DictionaryQueryEntry } from '@subql/types';
 import { buildQuery, GqlNode, GqlQuery, GqlVar, MetaData } from '@subql/utils';
 import fetch from 'node-fetch';
+import { NodeConfig } from '../configure/NodeConfig';
 import { SubqueryProject } from '../configure/SubqueryProject';
 import { getLogger } from '../utils/logger';
 import { profiler } from '../utils/profiler';
+import { timeout } from '../utils/promise';
 import { getYargsOption } from '../yargs';
 
 export type SpecVersion = {
@@ -29,6 +31,12 @@ export type Dictionary = {
   //TODO
   // specVersions: number[];
 };
+
+export type SpecVersionDictionary = {
+  _metadata: MetaData;
+  specVersions: SpecVersion[];
+};
+
 const logger = getLogger('dictionary');
 const { argv } = getYargsOption();
 
@@ -107,7 +115,10 @@ export class DictionaryService implements OnApplicationShutdown {
   private client: ApolloClient<NormalizedCacheObject>;
   private isShutdown = false;
 
-  constructor(protected project: SubqueryProject) {
+  constructor(
+    protected project: SubqueryProject,
+    private nodeConfig: NodeConfig,
+  ) {
     this.client = new ApolloClient({
       cache: new InMemoryCache({ resultCaching: true }),
       link: new HttpLink({ uri: this.project.network.dictionary, fetch }),
@@ -149,10 +160,13 @@ export class DictionaryService implements OnApplicationShutdown {
     );
 
     try {
-      const resp = await this.client.query({
-        query: gql(query),
-        variables,
-      });
+      const resp = await timeout(
+        this.client.query({
+          query: gql(query),
+          variables,
+        }),
+        this.nodeConfig.dictionaryTimeout,
+      );
       const blockHeightSet = new Set<number>();
       const specVersionBlockHeightSet = new Set<number>();
       const entityEndBlock: { [entity: string]: number } = {};
@@ -239,37 +253,58 @@ export class DictionaryService implements OnApplicationShutdown {
     return buildQuery(vars, nodes);
   }
 
-  async getSpecVersion(): Promise<SpecVersion[]> {
+  parseSpecVersions(raw: SpecVersionDictionary): SpecVersion[] {
+    if (raw === undefined) {
+      return [];
+    }
+    const specVersionBlockHeightSet = new Set<SpecVersion>();
+    const specVersions = (raw.specVersions as any).nodes;
+    const _metadata = raw._metadata;
+
+    // Add range for -1 specVersions
+    for (let i = 0; i < specVersions.length - 1; i++) {
+      specVersionBlockHeightSet.add({
+        id: specVersions[i].id,
+        start: Number(specVersions[i].blockHeight),
+        end: Number(specVersions[i + 1].blockHeight) - 1,
+      });
+    }
+    if (specVersions && specVersions.length >= 0) {
+      // Add range for the last specVersion
+      if (_metadata.lastProcessedHeight) {
+        specVersionBlockHeightSet.add({
+          id: specVersions[specVersions.length - 1].id,
+          start: Number(specVersions[specVersions.length - 1].blockHeight),
+          end: Number(_metadata.lastProcessedHeight),
+        });
+      }
+    }
+    return Array.from(specVersionBlockHeightSet);
+  }
+
+  async getSpecVersionsRaw(): Promise<SpecVersionDictionary> {
     const { query } = this.specVersionQuery();
     try {
-      const resp = await this.client.query({
-        query: gql(query),
-      });
-      const specVersionBlockHeightSet = new Set<SpecVersion>();
-      const _metadata = resp.data._metadata;
-      const specVersions = resp.data.specVersions.nodes;
+      const resp = await timeout(
+        this.client.query({
+          query: gql(query),
+        }),
+        this.nodeConfig.dictionaryTimeout,
+      );
 
-      if (specVersions && specVersions.length >= 0) {
-        // Add range for the last specVersion
-        if (_metadata.lastProcessedHeight) {
-          specVersionBlockHeightSet.add({
-            id: specVersions[specVersions.length - 1].id,
-            start: Number(specVersions[specVersions.length - 1].blockHeight),
-            end: Number(_metadata.lastProcessedHeight),
-          });
-        }
-        // Add range for -1 specVersions
-        for (let i = 0; i < resp.data.specVersions.nodes.length - 1; i++) {
-          specVersionBlockHeightSet.add({
-            id: specVersions[i].id,
-            start: Number(specVersions[i].blockHeight),
-            end: Number(specVersions[i + 1].blockHeight) - 1,
-          });
-        }
-      }
-      return Array.from(specVersionBlockHeightSet);
+      const _metadata = resp.data._metadata;
+      const specVersions = resp.data.specVersions;
+      return { _metadata, specVersions };
     } catch (err) {
       logger.warn(err, `failed to fetch specVersion result`);
+      return undefined;
+    }
+  }
+
+  async getSpecVersions(): Promise<SpecVersion[]> {
+    try {
+      return this.parseSpecVersions(await this.getSpecVersionsRaw());
+    } catch {
       return undefined;
     }
   }

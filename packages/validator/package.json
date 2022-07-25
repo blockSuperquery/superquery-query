@@ -1,6 +1,6 @@
 {
   "name": "@subql/validator",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "to validate subquery project",
   "homepage": "https://github.com/subquery/subql",
   "repository": "github:subquery/subql",
@@ -22,7 +22,6 @@
     "@subql/common-substrate": "workspace:*",
     "@subql/common-terra": "latest",
     "axios": "^0.24.0",
-    "ipfs-http-client": "^52.0.3",
     "js-yaml": "^4.1.0",
     "package-json-type": "^1.0.3"
   },

@@ -6,10 +6,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigureModule } from './configure/configure.module';
 import { DbModule } from './db/db.module';
-import { IndexerModule } from './indexer/indexer.module';
+import { FetchModule } from './indexer/fetch.module';
 import { MetaModule } from './meta/meta.module';
-
-export class NodeOption {}
 
 @Module({
   imports: [
@@ -23,7 +21,7 @@ export class NodeOption {}
     EventEmitterModule.forRoot(),
     ConfigureModule.register(),
     ScheduleModule.forRoot(),
-    IndexerModule,
+    FetchModule,
     MetaModule,
   ],
   controllers: [],

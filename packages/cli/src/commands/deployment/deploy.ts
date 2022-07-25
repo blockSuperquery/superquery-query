@@ -10,44 +10,43 @@ import {BASE_PROJECT_URL, DEFAULT_DEPLOYMENT_TYPE, ROOT_API_URL_PROD} from '../.
 import {
   deployToHostedService,
   ipfsCID_validate,
-  getEndpoint,
-  getDictEndpoint,
+  getEndpoints,
+  getDictEndpoints,
   getImage_v,
+  processEndpoints,
 } from '../../controller/deploy-controller';
-import {checkToken, valueOrPrompt} from '../../utils';
+import {checkToken, promptWithDefaultValues, valueOrPrompt} from '../../utils';
 
 const ACCESS_TOKEN_PATH = path.resolve(process.env.HOME, '.subql/SUBQL_ACCESS_TOKEN');
-
 export default class Deploy extends Command {
   static description = 'Deployment to hosted service';
 
   static flags = {
     org: Flags.string({description: 'Enter organization name'}),
-    project_name: Flags.string({description: 'Enter project name'}),
+    projectName: Flags.string({description: 'Enter project name'}),
     ipfsCID: Flags.string({description: 'Enter IPFS CID'}),
 
-    type: Flags.string({description: 'enter type', default: DEFAULT_DEPLOYMENT_TYPE, required: false}),
-    indexerVersion: Flags.string({description: 'enter indexer-version', required: false}),
-    queryVersion: Flags.string({description: 'enter query-version', required: false}),
-    dict: Flags.string({description: 'enter dict', required: false}),
-    endpoint: Flags.string({description: 'enter endpoint', required: false}),
+    type: Flags.enum({options: ['stage', 'primary'], default: DEFAULT_DEPLOYMENT_TYPE, required: false}),
+    indexerVersion: Flags.string({description: 'Enter indexer-version', required: false}),
+    queryVersion: Flags.string({description: 'Enter query-version', required: false}),
+    dict: Flags.string({description: 'Enter dictionary', required: false}),
+    endpoint: Flags.string({description: 'Enter endpoint', required: false}),
+
+    useDefaults: Flags.boolean({
+      char: 'd',
+      description: 'Use default values for indexerVerion, queryVersion, dictionary, endpoint',
+      required: false,
+    }),
   };
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Deploy);
+    let {dict, endpoint, indexerVersion, ipfsCID, org, projectName, queryVersion} = flags;
 
     const authToken = await checkToken(process.env.SUBQL_ACCESS_TOKEN, ACCESS_TOKEN_PATH);
-    let ipfsCID: string = flags.ipfsCID;
-    let org: string = flags.org;
-    let project_name: string = flags.project_name;
-
-    let endpoint: string = flags.endpoint;
-    let dict: string = flags.dict;
-    let indexer_v = flags.indexerVersion;
-    let query_v = flags.queryVersion;
 
     org = await valueOrPrompt(org, 'Enter organisation', 'Organisation is required');
-    project_name = await valueOrPrompt(project_name, 'Enter project name', 'Project name is required');
+    projectName = await valueOrPrompt(projectName, 'Enter project name', 'Project name is required');
     ipfsCID = await valueOrPrompt(ipfsCID, 'Enter IPFS CID', 'IPFS CID is required');
 
     const validator = await ipfsCID_validate(ipfsCID, authToken, ROOT_API_URL_PROD);
@@ -57,20 +56,26 @@ export default class Deploy extends Command {
     }
 
     if (!endpoint) {
-      endpoint = await cli.prompt('Enter endpoint', {
-        default: await getEndpoint(validator.chainId, ROOT_API_URL_PROD),
-        required: false,
-      });
+      const validateEndpoint = processEndpoints(await getEndpoints(ROOT_API_URL_PROD), validator.chainId);
+      if (!flags.useDefaults) {
+        endpoint = await promptWithDefaultValues(cli, 'Enter endpoint', validateEndpoint, null, true);
+      } else if (validateEndpoint) {
+        endpoint = validateEndpoint;
+      } else {
+        throw new Error(chalk.red('Please use --endpoint flag when using a custom Endpoint'));
+      }
     }
 
     if (!dict) {
-      dict = await cli.prompt('Enter dictionary', {
-        default: await getDictEndpoint(validator.chainId, ROOT_API_URL_PROD),
-        required: false,
-      });
+      const validateDictEndpoint = processEndpoints(await getDictEndpoints(ROOT_API_URL_PROD), validator.chainId);
+      if (!flags.useDefaults && !validateDictEndpoint) {
+        dict = await promptWithDefaultValues(cli, 'Enter dictionary', validateDictEndpoint, null, false);
+      } else {
+        dict = validateDictEndpoint;
+      }
     }
 
-    if (!indexer_v) {
+    if (!indexerVersion) {
       try {
         const indexerVersions = await getImage_v(
           validator.manifestRunner.node.name,
@@ -78,18 +83,23 @@ export default class Deploy extends Command {
           authToken,
           ROOT_API_URL_PROD
         );
-        const response = await inquirer.prompt({
-          name: 'indexer_v',
-          message: 'Select indexer version',
-          type: 'list',
-          choices: indexerVersions,
-        });
-        indexer_v = response.indexer_v;
+        if (!flags.useDefaults) {
+          const response = await promptWithDefaultValues(
+            inquirer,
+            'Enter indexer version',
+            null,
+            indexerVersions,
+            true
+          );
+          indexerVersion = response;
+        } else {
+          indexerVersion = indexerVersions[0];
+        }
       } catch (e) {
         throw new Error(chalk.bgRedBright('Indexer version is required'));
       }
     }
-    if (!query_v) {
+    if (!queryVersion) {
       try {
         const queryVersions = await getImage_v(
           validator.manifestRunner.query.name,
@@ -97,26 +107,26 @@ export default class Deploy extends Command {
           authToken,
           ROOT_API_URL_PROD
         );
-        const response = await inquirer.prompt({
-          name: 'query_v',
-          message: 'Select Query version',
-          type: 'list',
-          choices: queryVersions,
-        });
-        query_v = response.query_v;
+        if (!flags.useDefaults) {
+          const response = await promptWithDefaultValues(inquirer, 'Enter query version', null, queryVersions, true);
+          queryVersion = response;
+        } else {
+          queryVersion = queryVersions[0];
+        }
       } catch (e) {
         throw new Error(chalk.bgRedBright('Indexer version is required'));
       }
     }
 
     this.log('Deploying SupQuery project to Hosted Service');
+
     const deployment_output = await deployToHostedService(
       org,
-      project_name,
+      projectName,
       authToken,
       ipfsCID,
-      indexer_v,
-      query_v,
+      indexerVersion,
+      queryVersion,
       endpoint,
       flags.type,
       dict,
@@ -126,6 +136,8 @@ export default class Deploy extends Command {
     \nStatus: ${chalk.blue(deployment_output.status)} 
     \nDeploymentID: ${deployment_output.id}
     \nDeployment Type: ${deployment_output.type}
+    \nIndexer version: ${indexerVersion}
+    \nQuery version: ${queryVersion}
     \nEndpoint: ${deployment_output.endpoint}
     \nDictionary Endpoint: ${deployment_output.dictEndpoint}
     \nQuery URL: ${deployment_output.queryUrl}

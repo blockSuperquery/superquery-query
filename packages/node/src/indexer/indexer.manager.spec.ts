@@ -12,10 +12,8 @@ import { NodeConfig } from '../configure/NodeConfig';
 import { SubqueryProject } from '../configure/SubqueryProject';
 import { SubqueryFactory } from '../entities';
 import { ApiService } from './api.service';
-import { DictionaryService } from './dictionary.service';
 import { DsProcessorService } from './ds-processor.service';
 import { DynamicDsService } from './dynamic-ds.service';
-import { FetchService } from './fetch.service';
 import { IndexerManager } from './indexer.manager';
 import { MmrService } from './mmr.service';
 import { PoiService } from './poi.service';
@@ -129,23 +127,11 @@ function createIndexerManager(project: SubqueryProject): IndexerManager {
   const eventEmitter = new EventEmitter2();
 
   const apiService = new ApiService(project, eventEmitter);
-  const dictionaryService = new DictionaryService(project);
-
   const dsProcessorService = new DsProcessorService(project);
   const dynamicDsService = new DynamicDsService(dsProcessorService, project);
 
-  const dsPluginService = new DsProcessorService(project);
-  const fetchService = new FetchService(
-    apiService,
-    nodeConfig,
-    project,
-    dictionaryService,
-    dsPluginService,
-    dynamicDsService,
-    eventEmitter,
-  );
   const poiService = new PoiService(nodeConfig, project, sequilize);
-  const storeService = new StoreService(sequilize, nodeConfig, poiService);
+  const storeService = new StoreService(sequilize, nodeConfig);
   const subqueryRepo = SubqueryFactory(sequilize);
   const mmrService = new MmrService(nodeConfig, project, sequilize);
   const sandboxService = new SandboxService(
@@ -155,7 +141,7 @@ function createIndexerManager(project: SubqueryProject): IndexerManager {
     project,
   );
   const projectService = new ProjectService(
-    dsPluginService,
+    dsProcessorService,
     apiService,
     poiService,
     mmrService,
@@ -171,17 +157,14 @@ function createIndexerManager(project: SubqueryProject): IndexerManager {
   return new IndexerManager(
     storeService,
     apiService,
-    fetchService,
     poiService,
-    mmrService,
     sequilize,
     project,
     nodeConfig,
     sandboxService,
-    dsPluginService,
+    dsProcessorService,
     dynamicDsService,
     subqueryRepo,
-    eventEmitter,
     projectService,
   );
 }
