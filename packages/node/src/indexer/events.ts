@@ -3,7 +3,6 @@
 
 export enum IndexerEvent {
   ApiConnected = 'api_connected',
-  InjectedApiConnected = 'injected_api_connected',
   BlockTarget = 'block_target_height',
   BlockBest = 'block_best_height',
   BlockProcessing = 'block_processing_height',
@@ -18,6 +17,7 @@ export enum IndexerEvent {
 export interface ProcessBlockPayload {
   height: number;
   timestamp: number;
+  processedBlockCount: number;
 }
 
 export interface TargetBlockPayload {

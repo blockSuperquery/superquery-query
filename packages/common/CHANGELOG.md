@@ -8,6 +8,15 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.4.0] - 2022-08-17
+### Changed
+- Support new templates mono-repo structure. (#1236)
+
+## [1.3.0] - 2022-08-11
+### Added
+- Add Algorand to constants (#1228)
+
+## [1.2.2] - 2022-07-27
 ### Fixed
 - `latest`, `dev` and `~` are no longer supported runner versions.
 

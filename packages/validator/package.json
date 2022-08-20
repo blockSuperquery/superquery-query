@@ -1,6 +1,6 @@
 {
   "name": "@subql/validator",
-  "version": "1.2.2",
+  "version": "1.4.1",
   "description": "to validate subquery project",
   "homepage": "https://github.com/subquery/subql",
   "repository": "github:subquery/subql",
@@ -17,6 +17,7 @@
   ],
   "dependencies": {
     "@subql/common": "workspace:*",
+    "@subql/common-algorand": "latest",
     "@subql/common-avalanche": "latest",
     "@subql/common-cosmos": "^0.0.6",
     "@subql/common-substrate": "workspace:*",

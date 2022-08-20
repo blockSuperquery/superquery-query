@@ -20,6 +20,8 @@ export interface Store {
   getOneByField(entity: string, field: string, value: any): Promise<Entity | null>;
   set(entity: string, id: string, data: Entity): Promise<void>;
   bulkCreate(entity: string, data: Entity[]): Promise<void>;
+  //if fields in provided, only specify fields will be updated
+  bulkUpdate(entity: string, data: Entity[], fields?: string[]): Promise<void>;
   remove(entity: string, id: string): Promise<void>;
 }
 
@@ -48,6 +50,6 @@ export interface SubstrateEvent<T extends AnyTuple = AnyTuple> extends TypedEven
 
 export type DynamicDatasourceCreator = (name: string, args: Record<string, unknown>) => Promise<void>;
 
-type TypedEventRecord<T extends AnyTuple> = Omit<EventRecord, 'event'> & {
+export type TypedEventRecord<T extends AnyTuple> = Omit<EventRecord, 'event'> & {
   event: IEvent<T>;
 };

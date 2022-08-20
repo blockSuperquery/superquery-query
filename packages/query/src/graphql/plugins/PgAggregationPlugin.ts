@@ -11,17 +11,16 @@ import AggregateSpecsPlugin from '@graphile/pg-aggregates/dist/AggregateSpecsPlu
 import FilterRelationalAggregatesPlugin from '@graphile/pg-aggregates/dist/FilterRelationalAggregatesPlugin';
 import InflectionPlugin from '@graphile/pg-aggregates/dist/InflectionPlugin';
 import {AggregateSpec, AggregateGroupBySpec} from '@graphile/pg-aggregates/dist/interfaces';
-import OrderByAggregatesPlugin from '@graphile/pg-aggregates/dist/OrderByAggregatesPlugin';
 
 import type {Plugin} from 'graphile-build';
 import {makePluginByCombiningPlugins} from 'graphile-utils';
-
 import {argv} from '../../yargs';
+import OrderByAggregatesPlugin from './PgOrderByAggregatesPlugin';
 
-const unsafe = argv('unsafe') as boolean;
+const aggregate = argv('aggregate') as boolean;
 
 // overwrite the official plugin: https://github.com/graphile/pg-aggregates/blob/main/src/AggregateSpecsPlugin.ts
-// Removes all aggregation functions when not using --unsafe flag.
+// Removes all aggregation functions when not using --aggregate flag.
 
 const AggregateSpecsPluginSafe: Plugin = (builder) => {
   builder.hook('build', (build) => {
@@ -49,7 +48,7 @@ const plugins = [
 
 let PgAggregationPlugin: Plugin;
 
-if (unsafe) {
+if (aggregate) {
   PgAggregationPlugin = makePluginByCombiningPlugins(...plugins, AggregateSpecsPlugin);
 } else {
   PgAggregationPlugin = makePluginByCombiningPlugins(...plugins, AggregateSpecsPluginSafe);

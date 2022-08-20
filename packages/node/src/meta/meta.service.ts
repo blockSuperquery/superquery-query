@@ -29,9 +29,9 @@ export class MetaService {
   private networkMeta: NetworkMetadataPayload;
   private apiConnected: boolean;
   private usingDictionary: boolean;
-  private injectedApiConnected: boolean;
   private lastProcessedHeight: number;
   private lastProcessedTimestamp: number;
+  private processedBlockCount: number;
 
   constructor(private storeService: StoreService) {}
 
@@ -46,8 +46,8 @@ export class MetaService {
       lastProcessedTimestamp: this.lastProcessedTimestamp,
       uptime: process.uptime(),
       polkadotSdkVersion,
+      processedBlockCount: this.processedBlockCount,
       apiConnected: this.apiConnected,
-      injectedApiConnected: this.injectedApiConnected,
       usingDictionary: this.usingDictionary,
       ...this.networkMeta,
     };
@@ -62,6 +62,7 @@ export class MetaService {
   handleProcessingBlock(blockPayload: ProcessBlockPayload): void {
     this.currentProcessingHeight = blockPayload.height;
     this.currentProcessingTimestamp = blockPayload.timestamp;
+    this.processedBlockCount = blockPayload.processedBlockCount;
   }
 
   @OnEvent(IndexerEvent.BlockTarget)
@@ -82,11 +83,6 @@ export class MetaService {
   @OnEvent(IndexerEvent.ApiConnected)
   handleApiConnected({ value }: EventPayload<number>): void {
     this.apiConnected = !!value;
-  }
-
-  @OnEvent(IndexerEvent.InjectedApiConnected)
-  handleInjectedApiConnected({ value }: EventPayload<number>): void {
-    this.injectedApiConnected = !!value;
   }
 
   @OnEvent(IndexerEvent.UsingDictionary)

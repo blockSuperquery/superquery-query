@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'assert';
+import { isMainThread } from 'worker_threads';
 import { Injectable } from '@nestjs/common';
 import { hexToU8a, u8aToBuffer } from '@polkadot/util';
 import { blake2AsHex } from '@polkadot/util-crypto';
@@ -19,6 +20,7 @@ import {
   Model,
   ModelAttributeColumnOptions,
   ModelAttributes,
+  ModelCtor,
   ModelStatic,
   Op,
   QueryTypes,
@@ -62,6 +64,7 @@ const logger = getLogger('store');
 const NULL_MERKEL_ROOT = hexToU8a('0x00');
 const { argv } = getYargsOption();
 const NotifyTriggerManipulationType = [`INSERT`, `DELETE`, `UPDATE`];
+const KEY_FIELDS = ['id', '__id', '__block_range'];
 
 interface IndexField {
   entityName: string;
@@ -108,6 +111,13 @@ export class StoreService {
       logger.error(e, `Having a problem when get indexed fields`);
       process.exit(1);
     }
+  }
+
+  async incrementBlockCount(tx: Transaction): Promise<void> {
+    await this.sequelize.query(
+      `UPDATE "${this.schema}"._metadata SET value = (COALESCE(value->0):: int + 1)::text::jsonb WHERE key ='processedBlockCount'`,
+      { transaction: tx },
+    );
   }
 
   // eslint-disable-next-line complexity
@@ -303,7 +313,10 @@ export class StoreService {
     }
     this.metaDataRepo = MetadataFactory(this.sequelize, schema);
 
-    await this.sequelize.sync();
+    // this will allow alter current entity, including fields
+    // TODO, add rules for changes, eg only allow add nullable field
+    // Only allow altering the tables on the main thread
+    await this.sequelize.sync({ alter: { drop: isMainThread } });
     await this.setMetadata('historicalStateEnabled', this.historical);
     for (const query of extraQueries) {
       await this.sequelize.query(query);
@@ -612,6 +625,7 @@ group by
         );
       }
     }
+
     await this.setMetadata('lastProcessedHeight', targetBlockHeight, {
       transaction,
     });
@@ -711,7 +725,6 @@ group by
           assert(model, `model ${entity} not exists`);
           const attributes = data as unknown as CreationAttributes<Model>;
           if (this.historical) {
-            // If entity was already saved in current block, update that entity instead
             const [updatedRows] = await model.update(attributes, {
               hooks: false,
               transaction: this.tx,
@@ -765,6 +778,75 @@ group by
           throw new Error(`Failed to bulkCreate Entity ${entity}: ${e}`);
         }
       },
+
+      bulkUpdate: async (
+        entity: string,
+        data: Entity[],
+        fields?: string[],
+      ): Promise<void> => {
+        try {
+          const model = this.sequelize.model(entity);
+          assert(model, `model ${entity} not exists`);
+          if (this.historical) {
+            if (fields.length !== 0) {
+              logger.warn(
+                `Update specified fields with historical feature is not supported`,
+              );
+            }
+            const newRecordAttributes: CreationAttributes<Model>[] = [];
+            await Promise.all(
+              data.map(async (record) => {
+                const attributes =
+                  record as unknown as CreationAttributes<Model>;
+                const [updatedRows] = await model.update(attributes, {
+                  hooks: false,
+                  transaction: this.tx,
+                  where: this.sequelize.and(
+                    { id: record.id },
+                    this.sequelize.where(
+                      this.sequelize.fn(
+                        'lower',
+                        this.sequelize.col('_block_range'),
+                      ),
+                      this.blockHeight,
+                    ),
+                  ),
+                });
+                if (updatedRows < 1) {
+                  await this.markAsDeleted(model, record.id);
+                  newRecordAttributes.push(attributes);
+                }
+              }),
+            );
+            if (newRecordAttributes.length !== 0) {
+              await model.bulkCreate(newRecordAttributes, {
+                transaction: this.tx,
+              });
+            }
+          } else {
+            const modelFields =
+              fields ??
+              Object.keys(model.getAttributes()).filter(
+                (item) => !KEY_FIELDS.includes(item),
+              );
+            await model.bulkCreate(
+              data as unknown as CreationAttributes<Model>[],
+              {
+                transaction: this.tx,
+                updateOnDuplicate: modelFields,
+              },
+            );
+          }
+          if (this.config.proofOfIndex) {
+            for (const item of data) {
+              this.operationStack.put(OperationType.Set, entity, item);
+            }
+          }
+        } catch (e) {
+          throw new Error(`Failed to bulkCreate Entity ${entity}: ${e}`);
+        }
+      },
+
       remove: async (entity: string, id: string): Promise<void> => {
         try {
           const model = this.sequelize.model(entity);

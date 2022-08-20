@@ -8,6 +8,28 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.6.0] - 2022-08-17
+### Changed
+- Support new templates mono-repo structure. (#1236)
+
+## [1.5.1] - 2022-08-11
+### Fixed
+- Bump version for missing update `subql-common` in previous release.
+
+## [1.5.0] - 2022-08-04
+### Added
+- Support for Algorand projects (#1228)
+
+### Fixed
+- Removing `.github` directory from starter templates (#1223)
+
+## [1.4.0] - 2022-07-27
+### Added
+- Added redeploy deployment feature (#1205)
+- Rename `--project_name` flag to `--projectName` (#1205)
+### Fixed
+- Use latest runner validation from common package. (#1195)
+
 ## [1.3.1] - 2022-07-13
 ### Fixed
 - Added resolution to downgrade `node-fetch` as we have not support ES module (1184)
