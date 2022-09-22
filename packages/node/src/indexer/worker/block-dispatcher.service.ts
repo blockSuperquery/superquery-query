@@ -8,15 +8,19 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import { RuntimeVersion } from '@polkadot/types/interfaces';
 import { hexToU8a, u8aEq } from '@polkadot/util';
-import { delay, getYargsOption, profilerWrap } from '@subql/node-core';
-import { NodeConfig } from '@subql/node-core/configure';
-import { IndexerEvent } from '@subql/node-core/events';
-import { Worker } from '@subql/node-core/indexer';
-import { getLogger } from '@subql/node-core/logger';
+import {
+  getLogger,
+  NodeConfig,
+  IndexerEvent,
+  Worker,
+  delay,
+  profilerWrap,
+  AutoQueue,
+  Queue,
+} from '@subql/node-core';
 import { SubstrateBlock } from '@subql/types';
 import chalk from 'chalk';
 import { last } from 'lodash';
-import { AutoQueue, Queue } from '../../utils/autoQueue';
 import * as SubstrateUtil from '../../utils/substrate';
 import { ApiService } from '../api.service';
 import { IndexerManager } from '../indexer.manager';
@@ -124,9 +128,7 @@ export class BlockDispatcherService
     this.fetchQueue = new Queue(nodeConfig.batchSize * 3);
     this.processQueue = new AutoQueue(nodeConfig.batchSize * 3);
 
-    const { argv } = getYargsOption();
-
-    if (argv.profiler) {
+    if (this.nodeConfig.profiler) {
       this.fetchBlocksBatches = profilerWrap(
         SubstrateUtil.fetchBlocksBatches,
         'SubstrateUtil',

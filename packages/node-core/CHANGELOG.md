@@ -8,5 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
+### Changes
+- Moved `yargs` file from `node-core` to `node`. (#1281)
 
-- Move blockchain agnostic code from `node` to `node-core` package
+## [0.1.1] - 2022-08-26
+### Fixed
+- Imports not being relative (#1268)
+
+## [0.1.0] - 2022-08-26
+
+- Move blockchain agnostic code from `node` to `node-core` package. (#1222)

@@ -6,7 +6,6 @@ import {isMainThread} from 'worker_threads';
 import {Injectable} from '@nestjs/common';
 import {hexToU8a, u8aToBuffer} from '@polkadot/util';
 import {blake2AsHex} from '@polkadot/util-crypto';
-import {OperationType, StoreOperations} from '@subql/node-core/indexer';
 import {Entity, Store} from '@subql/types';
 import {GraphQLModelsRelationsEnums, GraphQLRelationsType, IndexType} from '@subql/utils';
 import {camelCase, flatten, isEqual, upperFirst} from 'lodash';
@@ -46,12 +45,12 @@ import {
   camelCaseObjectKey,
   makeTriggerName,
 } from '../utils';
-import {getYargsOption} from '../yargs';
 import {Metadata, MetadataFactory, MetadataRepo, PoiFactory, PoiRepo, ProofOfIndex} from './entities';
+import {StoreOperations} from './StoreOperations';
+import {OperationType} from './types';
 
 const logger = getLogger('store');
 const NULL_MERKEL_ROOT = hexToU8a('0x00');
-const {argv} = getYargsOption();
 const NotifyTriggerManipulationType = [`INSERT`, `DELETE`, `UPDATE`];
 const KEY_FIELDS = ['id', '__id', '__block_range'];
 
@@ -150,13 +149,13 @@ export class StoreService {
 
       const comment = `@enum\\n@enumName ${e.name}${e.description ? `\\n ${e.description}` : ''}`;
 
-      await this.sequelize.query(`COMMENT ON TYPE "${enumTypeName}" IS E?`, {
+      await this.sequelize.query(`COMMENT ON TYPE "${enumTypeName}" IS ?`, {
         replacements: [comment],
       });
       enumTypeMap.set(e.name, `"${enumTypeName}"`);
     }
     const extraQueries = [];
-    if (argv.subscription) {
+    if (this.config.subscription) {
       extraQueries.push(createSendNotificationTriggerFunction);
     }
     for (const model of this.modelsRelations.models) {
@@ -186,7 +185,7 @@ export class StoreService {
         this.addScopeAndBlockHeightHooks(sequelizeModel);
         extraQueries.push(createExcludeConstraintQuery(schema, sequelizeModel.tableName));
       }
-      if (argv.subscription) {
+      if (this.config.subscription) {
         const triggerName = makeTriggerName(schema, sequelizeModel.tableName);
         const triggers = await this.sequelize.query(getNotifyTriggers(), {
           replacements: {triggerName},
@@ -281,7 +280,7 @@ export class StoreService {
         enabled = false;
       }
     } catch (e) {
-      enabled = !argv['disable-historical'];
+      enabled = !this.config.disableHistorical;
     }
     logger.info(`Historical state is ${enabled ? 'enabled' : 'disabled'}`);
     return enabled;
@@ -570,7 +569,7 @@ group by
               (indexField) =>
                 upperFirst(camelCase(indexField.entityName)) === entity && camelCase(indexField.fieldName) === field
             ) > -1;
-          assert(indexed, `to query by field ${field}, an index must be created on model ${entity}`);
+          assert(indexed, `to query by field ${String(field)}, an index must be created on model ${entity}`);
           const records = await model.findAll({
             where: {[field]: value},
             transaction: this.tx,
@@ -579,7 +578,7 @@ group by
           });
           return records.map((record) => record.toJSON() as T);
         } catch (e) {
-          throw new Error(`Failed to getByField Entity ${entity} with field ${field}: ${e}`);
+          throw new Error(`Failed to getByField Entity ${entity} with field ${String(field)}: ${e}`);
         }
       },
       getOneByField: async <T extends Entity>(
@@ -597,14 +596,14 @@ group by
                 camelCase(indexField.fieldName) === field &&
                 indexField.isUnique
             ) > -1;
-          assert(indexed, `to query by field ${field}, an unique index must be created on model ${entity}`);
+          assert(indexed, `to query by field ${String(field)}, an unique index must be created on model ${entity}`);
           const record = await model.findOne({
             where: {[field]: value},
             transaction: this.tx,
           });
           return record?.toJSON() as T;
         } catch (e) {
-          throw new Error(`Failed to getOneByField Entity ${entity} with field ${field}: ${e}`);
+          throw new Error(`Failed to getOneByField Entity ${entity} with field ${String(field)}: ${e}`);
         }
       },
       set: async (entity: string, _id: string, data: Entity): Promise<void> => {

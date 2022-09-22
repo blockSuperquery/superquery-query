@@ -9,6 +9,15 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 ## [Unreleased]
 
+## [1.5.0] - 2022-09-13
+### Changed
+- Change types to support wasm processor and update polkadot API to v9. (#1280)
+
+## [1.4.0] - 2022-08-26
+
+### Changed
+- Updated store.getByField to have limit and offset options. `getByField(entity: string, field: string, value: any, options?: {offset?: number; limit?: number}): Promise<Entity[]>;`. (#1259)
+
 ## [1.3.0] - 2022-08-17
 ### Added
 - `bulkUpdate` and `bulkGet` to the injected store. This can be used to optimise handlers and speed up indexing. (#1246)

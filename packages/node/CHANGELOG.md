@@ -5,6 +5,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Subcommands for `force-clean` and `reindex`. (#1281)
+- `yargs` file has been moved back into `node` from `node-core`. (#1281)
+
+## [1.9.2] - 2022-09-19
+### Changed
+- In order to fix go-dictionary integration we changed dictionary query to use case-insensitive search for events/extrinsics name. (#1301)
+
+
+## [1.9.1] - 2022-08-29
+### Fixed
+- Fixed `@subql/node-core` import path issues (#1272)
+
+## [1.9.0] - 2022-08-26
+### Changed
+- Use `@subql/node-core` package. (#1222)
+- Updated store.getByField to have limit and offset options. `getByField(entity: string, field: string, value: any, options?: {offset?: number; limit?: number}): Promise<Entity[]>;`. (#1259)
+### Fixed
+- Indexing stop processing blocks. (#1261)
 
 ## [1.8.0] - 2022-08-17
 ### Fixed

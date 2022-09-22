@@ -21,10 +21,14 @@ import {
   SubstrateRuntimeHandlerFilter,
   SubstrateBlockFilter,
 } from '@subql/common-substrate';
-import { getYargsOption, getLogger, profiler } from '@subql/node-core';
-import { NodeConfig } from '@subql/node-core/configure';
-import { IndexerEvent } from '@subql/node-core/events';
-import { delay, checkMemoryUsage } from '@subql/node-core/utils';
+import {
+  delay,
+  checkMemoryUsage,
+  NodeConfig,
+  IndexerEvent,
+  getLogger,
+  profiler,
+} from '@subql/node-core';
 import {
   DictionaryQueryEntry,
   SubstrateBlock,
@@ -36,6 +40,7 @@ import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
 import { isBaseHandler, isCustomHandler } from '../utils/project';
 import * as SubstrateUtil from '../utils/substrate';
 import { calcInterval } from '../utils/substrate';
+import { yargsOptions } from '../yargs';
 import { ApiService } from './api.service';
 import { DictionaryService, SpecVersion } from './dictionary.service';
 import { DsProcessorService } from './ds-processor.service';
@@ -49,8 +54,6 @@ const CHECK_MEMORY_INTERVAL = 60000;
 const MINIMUM_BATCH_SIZE = 5;
 const SPEC_VERSION_BLOCK_GAP = 100;
 const INTERVAL_PERCENT = 0.9;
-
-const { argv } = getYargsOption();
 
 function eventFilterToQueryEntry(
   filter: SubstrateEventFilter,
@@ -271,8 +274,8 @@ export class FetchService implements OnApplicationShutdown {
 
   @Interval(CHECK_MEMORY_INTERVAL)
   checkBatchScale(): void {
-    if (argv['scale-batch-size']) {
-      const scale = checkMemoryUsage(this.batchSizeScale);
+    if (this.nodeConfig['scale-batch-size']) {
+      const scale = checkMemoryUsage(this.batchSizeScale, this.nodeConfig);
 
       if (this.batchSizeScale !== scale) {
         this.batchSizeScale = scale;
@@ -502,7 +505,7 @@ export class FetchService implements OnApplicationShutdown {
     return this.currentRuntimeVersion;
   }
 
-  @profiler(argv.profiler)
+  @profiler(yargsOptions.argv.profiler)
   async specChanged(height: number): Promise<boolean> {
     const specVersion = await this.getSpecVersion(height);
     if (this.parentSpecVersion !== specVersion) {
@@ -513,7 +516,7 @@ export class FetchService implements OnApplicationShutdown {
     return false;
   }
 
-  @profiler(argv.profiler)
+  @profiler(yargsOptions.argv.profiler)
   async prefetchMeta(height: number): Promise<void> {
     const blockHash = await this.api.rpc.chain.getBlockHash(height);
     if (
@@ -566,7 +569,7 @@ export class FetchService implements OnApplicationShutdown {
       const { _metadata: metaData } = dictionary;
 
       if (metaData.genesisHash !== this.api.genesisHash.toString()) {
-        logger.warn(`Dictionary is disabled since now`);
+        logger.error('The dictionary that you have specified does not match the chain you are indexing, it will be ignored. Please update your project manifest to reference the correct dictionary');
         this.useDictionary = false;
         this.eventEmitter.emit(IndexerEvent.UsingDictionary, {
           value: Number(this.useDictionary),
