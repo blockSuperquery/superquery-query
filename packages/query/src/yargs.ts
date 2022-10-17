@@ -75,11 +75,13 @@ export function getYargsOption() {
       demandOption: false,
       describe: 'Max connection to pg pool',
       type: 'number',
+      default: 10,
     },
     'query-timeout': {
       demandOption: false,
       describe: 'Query timeout in milliseconds',
       type: 'number',
+      default: 10000,
     },
     'query-explain': {
       demandOption: false,
@@ -91,6 +93,12 @@ export function getYargsOption() {
       default: true,
       describe: 'Enable aggregate feature',
       type: 'boolean',
+    },
+    'disable-hot-schema': {
+      demandOption: false,
+      describe: 'Hot reload schema on schema-changes',
+      type: 'boolean',
+      default: true,
     },
   });
 }

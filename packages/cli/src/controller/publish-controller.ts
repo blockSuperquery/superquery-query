@@ -79,7 +79,7 @@ async function replaceFileReferences<T>(
     return (await Promise.all(
       input.map((val) => replaceFileReferences(projectDir, val, authToken, ipfs))
     )) as unknown as T;
-  } else if (typeof input === 'object') {
+  } else if (typeof input === 'object' && input !== null) {
     if (input instanceof Map) {
       input = mapToObject(input) as T;
     }
@@ -91,6 +91,7 @@ async function replaceFileReferences<T>(
     const keys = Object.keys(input) as unknown as (keyof T)[];
     await Promise.all(
       keys.map(async (key) => {
+        // this is the loop
         input[key] = await replaceFileReferences(projectDir, input[key], authToken, ipfs);
       })
     );
@@ -99,13 +100,14 @@ async function replaceFileReferences<T>(
   return input;
 }
 
+const fileMap = new Map<string | fs.ReadStream, string>();
+
 export async function uploadFile(
   content: string | fs.ReadStream,
   authToken: string,
   ipfs?: IPFSHTTPClient
 ): Promise<string> {
   let ipfsClientCid: string;
-  // if user provide ipfs, we will try to upload it to this gateway
   if (ipfs) {
     try {
       ipfsClientCid = (await ipfs.add(content, {pin: true, cidVersion: 0})).cid.toString();
@@ -115,16 +117,21 @@ export async function uploadFile(
   }
   let ipfsClusterCid: string;
   try {
-    ipfsClusterCid = await UploadFileByCluster(
-      determineStringOrFsStream(content) ? await fs.promises.readFile(content.path, 'utf8') : content,
-      authToken
-    );
+    if (fileMap.has(content)) {
+      ipfsClusterCid = fileMap.get(content);
+    } else {
+      ipfsClusterCid = await uploadFileByCluster(
+        determineStringOrFsStream(content) ? await fs.promises.readFile(content.path, 'utf8') : content,
+        authToken
+      );
+      fileMap.set(content, ipfsClusterCid);
+    }
   } catch (e) {
     throw new Error(`Publish project to default cluster failed, ${e}`);
   }
   // Validate IPFS cid
   if (ipfsClientCid && ipfsClientCid !== ipfsClusterCid) {
-    throw new Error(`Published and received IPFS cid not identical \n, 
+    throw new Error(`Published and received IPFS cid not identical \n,
     IPFS gateway: ${ipfsClientCid}, IPFS cluster: ${ipfsClusterCid}`);
   }
   return ipfsClusterCid;
@@ -134,7 +141,7 @@ function determineStringOrFsStream(toBeDetermined: unknown): toBeDetermined is f
   return !!(toBeDetermined as fs.ReadStream).path;
 }
 
-async function UploadFileByCluster(content: string, authToken: string): Promise<string> {
+async function uploadFileByCluster(content: string, authToken: string): Promise<string> {
   const bodyFormData = new FormData();
   bodyFormData.append('data', content);
   const result = (
@@ -151,7 +158,17 @@ async function UploadFileByCluster(content: string, authToken: string): Promise<
       maxContentLength: 50 * 1024 * 1024,
     })
   ).data as ClusterResponseData;
-  return result.cid?.['/'];
+
+  if (typeof result.cid === 'string') {
+    return result.cid;
+  }
+  const cid = result.cid?.['/'];
+
+  if (!cid) {
+    throw new Error('Failed to get CID from response');
+  }
+
+  return cid;
 }
 
 function mapToObject(map: Map<string | number, unknown>): Record<string | number, unknown> {
@@ -165,15 +182,15 @@ function mapToObject(map: Map<string | number, unknown>): Record<string | number
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isFileReference(value: any): value is FileReference {
-  return value.file && typeof value.file === 'string';
+  return value?.file && typeof value.file === 'string';
 }
 
 interface ClusterResponseData {
   name: string;
-  cid: cidSpec;
+  cid: CidSpec | string;
   size: number;
 }
 // cluster response cid stored as {'/': 'QmVq2bqunmkmEmMCY3x9U9kDcgoRBGRbuBm5j7XKZDvSYt'}
-interface cidSpec {
+interface CidSpec {
   '/': string;
 }
