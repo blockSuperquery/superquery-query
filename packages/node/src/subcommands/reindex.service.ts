@@ -1,72 +1,92 @@
 // Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import {
   getLogger,
-  MetadataFactory,
-  MetadataRepo,
   MmrService,
   NodeConfig,
   StoreService,
   getExistingProjectSchema,
-  getMetaDataInfo,
+  CacheMetadataModel,
+  initDbSchema,
+  ForceCleanService,
+  reindex,
 } from '@subql/node-core';
 import { Sequelize } from 'sequelize';
-import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
-import { initDbSchema } from '../utils/project';
-
-import { ForceCleanService } from './forceClean.service';
+import { SubqueryProject } from '../configure/SubqueryProject';
+import { DynamicDsService } from '../indexer/dynamic-ds.service';
+import { UnfinalizedBlocksService } from '../indexer/unfinalizedBlocks.service';
 
 const logger = getLogger('Reindex');
 
 @Injectable()
 export class ReindexService {
   private schema: string;
-  private metadataRepo: MetadataRepo;
-  private specName: string;
-  private startHeight: number;
+  private metadataRepo: CacheMetadataModel;
+
   constructor(
     private readonly sequelize: Sequelize,
     private readonly nodeConfig: NodeConfig,
     private readonly storeService: StoreService,
     private readonly mmrService: MmrService,
-    private readonly project: SubqueryProject,
+    @Inject('ISubqueryProject') private readonly project: SubqueryProject,
     private readonly forceCleanService: ForceCleanService,
+    private readonly unfinalizedBlocksService: UnfinalizedBlocksService,
+    private readonly dynamicDsService: DynamicDsService,
   ) {}
+
+  async init(): Promise<void> {
+    this.schema = await this.getExistingProjectSchema();
+
+    if (!this.schema) {
+      logger.error('Unable to locate schema');
+      throw new Error('Schema does not exist.');
+    }
+    await this.initDbSchema();
+
+    this.metadataRepo = this.storeService.storeCache.metadata;
+
+    this.dynamicDsService.init(this.metadataRepo);
+  }
+
+  async getTargetHeightWithUnfinalizedBlocks(
+    inputHeight: number,
+  ): Promise<number> {
+    const unfinalizedBlocks =
+      await this.unfinalizedBlocksService.getMetadataUnfinalizedBlocks();
+    const bestBlocks = unfinalizedBlocks.filter(
+      ({ blockHeight }) => blockHeight <= inputHeight,
+    );
+    if (bestBlocks.length === 0) {
+      return inputHeight;
+    }
+    const { blockHeight: firstBestBlock } = bestBlocks[0];
+    return Math.min(inputHeight, firstBestBlock);
+  }
 
   private async getExistingProjectSchema(): Promise<string> {
     return getExistingProjectSchema(this.nodeConfig, this.sequelize);
   }
 
   private async getLastProcessedHeight(): Promise<number | undefined> {
-    return getMetaDataInfo(this.metadataRepo, 'lastProcessedHeight');
+    return this.metadataRepo.find('lastProcessedHeight');
   }
 
   private async getMetadataBlockOffset(): Promise<number | undefined> {
-    return getMetaDataInfo(this.metadataRepo, 'blockOffset');
+    return this.metadataRepo.find('blockOffset');
   }
 
   private async getMetadataSpecName(): Promise<string | undefined> {
-    const res = await this.metadataRepo.findOne({
-      where: { key: 'specName' },
-    });
-    return res?.value as string | undefined;
+    return this.metadataRepo.find('specName');
   }
 
   private async initDbSchema(): Promise<void> {
     await initDbSchema(this.project, this.schema, this.storeService);
   }
 
-  private async getDataSourcesForSpecName(): Promise<SubqlProjectDs[]> {
-    this.specName = await this.getMetadataSpecName();
-    return this.project.dataSources.filter(
-      (ds) => !ds.filter?.specName || ds.filter.specName === this.specName,
-    );
-  }
-
-  private async getStartBlockFromDataSources() {
-    const datasources = await this.getDataSourcesForSpecName();
+  private getStartBlockFromDataSources(): number {
+    const datasources = this.project.dataSources;
 
     const startBlocksList = datasources.map((item) => item.startBlock ?? 1);
     if (startBlocksList.length === 0) {
@@ -80,57 +100,24 @@ export class ReindexService {
   }
 
   async reindex(targetBlockHeight: number): Promise<void> {
-    this.schema = await this.getExistingProjectSchema();
+    const [startHeight, lastProcessedHeight] = await Promise.all([
+      this.getStartBlockFromDataSources(),
+      this.getLastProcessedHeight(),
+    ]);
 
-    if (!this.schema) {
-      logger.error('Unable to locate schema');
-      throw new Error('Schema does not exist.');
-    }
-    await this.initDbSchema();
+    await reindex(
+      startHeight,
+      await this.getMetadataBlockOffset(),
+      targetBlockHeight,
+      lastProcessedHeight,
+      this.storeService,
+      this.unfinalizedBlocksService,
+      this.dynamicDsService,
+      this.mmrService,
+      this.sequelize,
+      this.forceCleanService,
+    );
 
-    this.metadataRepo = MetadataFactory(this.sequelize, this.schema);
-
-    this.startHeight = await this.getStartBlockFromDataSources();
-
-    const lastProcessedHeight = await this.getLastProcessedHeight();
-
-    if (!this.storeService.historical) {
-      logger.warn('Unable to reindex, historical state not enabled');
-      return;
-    }
-    if (!lastProcessedHeight || lastProcessedHeight < targetBlockHeight) {
-      logger.warn(
-        `Skipping reindexing to block ${targetBlockHeight}: current indexing height ${lastProcessedHeight} is behind requested block`,
-      );
-      return;
-    }
-
-    // if startHeight is greater than the targetHeight, just force clean
-    if (targetBlockHeight < this.startHeight) {
-      logger.info(
-        `targetHeight: ${targetBlockHeight} is less than startHeight: ${this.startHeight}. Hence executing force-clean`,
-      );
-      await this.forceCleanService.forceClean();
-    } else {
-      logger.info(`Reindexing to block: ${targetBlockHeight}`);
-      const transaction = await this.sequelize.transaction();
-      try {
-        await this.storeService.rewind(targetBlockHeight, transaction);
-
-        const blockOffset = await this.getMetadataBlockOffset();
-        if (blockOffset) {
-          await this.mmrService.deleteMmrNode(
-            targetBlockHeight + 1,
-            blockOffset,
-          );
-        }
-        await transaction.commit();
-        logger.info('Reindex Success');
-      } catch (err) {
-        logger.error(err, 'Reindexing failed');
-        await transaction.rollback();
-        throw err;
-      }
-    }
+    await this.storeService.storeCache.flushCache(true, true);
   }
 }

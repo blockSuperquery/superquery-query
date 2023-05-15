@@ -1,43 +1,30 @@
 // Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { ApiPromise } from '@polkadot/api';
-import { RegisteredTypes } from '@polkadot/types/types';
+import { Block } from '@ethersproject/abstract-provider';
+import { Injectable } from '@nestjs/common';
+import { Reader, RunnerSpecs, validateSemver } from '@subql/common';
 import {
-  ReaderFactory,
-  ReaderOptions,
-  Reader,
-  RunnerSpecs,
-  validateSemver,
-} from '@subql/common';
-import {
-  SubstrateProjectNetworkConfig,
-  parseSubstrateProjectManifest,
-  ProjectManifestV0_2_0Impl,
-  ProjectManifestV0_2_1Impl,
-  ProjectManifestV0_3_0Impl,
-  SubstrateDataSource,
-  FileType,
+  EthereumProjectNetworkConfig,
+  parseEthereumProjectManifest,
+  SubqlEthereumDataSource,
+  EthereumBlockFilter,
   ProjectManifestV1_0_0Impl,
-  SubstrateBlockFilter,
   isRuntimeDs,
-  SubstrateHandlerKind,
-} from '@subql/common-substrate';
+  EthereumHandlerKind,
+} from '@subql/common-ethereum';
+import { getProjectRoot } from '@subql/node-core';
 import { buildSchemaFromString } from '@subql/utils';
 import Cron from 'cron-converter';
 import { GraphQLSchema } from 'graphql';
-import {
-  getChainTypes,
-  getProjectRoot,
-  updateDataSourcesV0_2_0,
-} from '../utils/project';
-import { getBlockByHeight, getTimestamp } from '../utils/substrate';
+import { EthereumApi } from '../ethereum/api.ethereum';
+import { updateDataSourcesV1_0_0 } from '../utils/project';
 
-export type SubqlProjectDs = SubstrateDataSource & {
-  mapping: SubstrateDataSource['mapping'] & { entryScript: string };
+export type SubqlProjectDs = SubqlEthereumDataSource & {
+  mapping: SubqlEthereumDataSource['mapping'] & { entryScript: string };
 };
 
-export type SubqlProjectBlockFilter = SubstrateBlockFilter & {
+export type SubqlProjectBlockFilter = EthereumBlockFilter & {
   cronSchedule?: {
     schedule: Cron.Seeker;
     next: number;
@@ -49,69 +36,60 @@ export type SubqlProjectDsTemplate = Omit<SubqlProjectDs, 'startBlock'> & {
 };
 
 const NOT_SUPPORT = (name: string) => {
-  throw new Error(`Manifest specVersion ${name}() is not supported`);
+  throw new Error(`Manifest specVersion ${name} is not supported`);
 };
 
+// This is the runtime type after we have mapped genesisHash to chainId and endpoint/dict have been provided when dealing with deployments
+type NetworkConfig = EthereumProjectNetworkConfig & { chainId: string };
+
+@Injectable()
 export class SubqueryProject {
   id: string;
   root: string;
-  network: Partial<SubstrateProjectNetworkConfig>;
+  network: NetworkConfig;
   dataSources: SubqlProjectDs[];
   schema: GraphQLSchema;
   templates: SubqlProjectDsTemplate[];
-  chainTypes?: RegisteredTypes;
   runner?: RunnerSpecs;
 
   static async create(
     path: string,
-    networkOverrides?: Partial<SubstrateProjectNetworkConfig>,
-    readerOptions?: ReaderOptions,
+    rawManifest: unknown,
+    reader: Reader,
+    networkOverrides?: Partial<EthereumProjectNetworkConfig>,
   ): Promise<SubqueryProject> {
-    // We have to use reader here, because path can be remote or local
+    // rawManifest and reader can be reused here.
+    // It has been pre-fetched and used for rebase manifest runner options with args
+    // in order to generate correct configs.
+
+    // But we still need reader here, because path can be remote or local
     // and the `loadProjectManifest(projectPath)` only support local mode
-    const reader = await ReaderFactory.create(path, readerOptions);
-    const projectSchema = await reader.getProjectSchema();
-    if (projectSchema === undefined) {
+    if (rawManifest === undefined) {
       throw new Error(`Get manifest from project path ${path} failed`);
     }
+    const manifest = parseEthereumProjectManifest(rawManifest);
 
-    const manifest = parseSubstrateProjectManifest(projectSchema);
-
-    if (manifest.isV0_0_1) {
-      NOT_SUPPORT('0.0.1');
-    } else if (manifest.isV0_2_0 || manifest.isV0_3_0) {
-      return loadProjectFromManifestBase(
-        manifest.asV0_2_0,
-        reader,
-        path,
-        networkOverrides,
-      );
-    } else if (manifest.isV0_2_1) {
-      return loadProjectFromManifest0_2_1(
-        manifest.asV0_2_1,
-        reader,
-        path,
-        networkOverrides,
-      );
-    } else if (manifest.isV1_0_0) {
+    if (manifest.isV1_0_0) {
       return loadProjectFromManifest1_0_0(
         manifest.asV1_0_0,
         reader,
         path,
         networkOverrides,
       );
+    } else {
+      NOT_SUPPORT(manifest.specVersion);
     }
+
+    return loadProjectFromManifest1_0_0(
+      manifest.asV1_0_0,
+      reader,
+      path,
+      networkOverrides,
+    );
   }
 }
 
-export interface SubqueryProjectNetwork {
-  chainId: string;
-  endpoint?: string;
-  dictionary?: string;
-  chaintypes?: FileType;
-}
-
-function processChainId(network: any): SubqueryProjectNetwork {
+function processChainId(network: any): NetworkConfig {
   if (network.chainId && network.genesisHash) {
     throw new Error('Please only provide one of chainId and genesisHash');
   } else if (network.genesisHash && !network.chainId) {
@@ -121,19 +99,19 @@ function processChainId(network: any): SubqueryProjectNetwork {
   return network;
 }
 
-type SUPPORT_MANIFEST =
-  | ProjectManifestV0_2_0Impl
-  | ProjectManifestV0_2_1Impl
-  | ProjectManifestV0_3_0Impl
-  | ProjectManifestV1_0_0Impl;
+type SUPPORT_MANIFEST = ProjectManifestV1_0_0Impl;
 
 async function loadProjectFromManifestBase(
   projectManifest: SUPPORT_MANIFEST,
   reader: Reader,
   path: string,
-  networkOverrides?: Partial<SubstrateProjectNetworkConfig>,
+  networkOverrides?: Partial<EthereumProjectNetworkConfig>,
 ): Promise<SubqueryProject> {
   const root = await getProjectRoot(reader);
+
+  if (typeof projectManifest.network.endpoint === 'string') {
+    projectManifest.network.endpoint = [projectManifest.network.endpoint];
+  }
 
   const network = processChainId({
     ...projectManifest.network,
@@ -156,44 +134,22 @@ async function loadProjectFromManifestBase(
   }
   const schema = buildSchemaFromString(schemaString);
 
-  const chainTypes = projectManifest.network.chaintypes
-    ? await getChainTypes(reader, root, projectManifest.network.chaintypes.file)
-    : undefined;
-
-  const dataSources = await updateDataSourcesV0_2_0(
+  const dataSources = await updateDataSourcesV1_0_0(
     projectManifest.dataSources,
     reader,
     root,
   );
+
+  const templates = await loadProjectTemplates(projectManifest, root, reader);
+
   return {
     id: reader.root ? reader.root : path, //TODO, need to method to get project_id
     root,
     network,
     dataSources,
     schema,
-    chainTypes,
-    templates: [],
+    templates,
   };
-}
-
-async function loadProjectFromManifest0_2_1(
-  projectManifest: ProjectManifestV0_2_1Impl,
-  reader: Reader,
-  path: string,
-  networkOverrides?: Partial<SubstrateProjectNetworkConfig>,
-): Promise<SubqueryProject> {
-  const project = await loadProjectFromManifestBase(
-    projectManifest,
-    reader,
-    path,
-    networkOverrides,
-  );
-  project.templates = await loadProjectTemplates(
-    projectManifest,
-    project.root,
-    reader,
-  );
-  return project;
 }
 
 const { version: packageVersion } = require('../../package.json');
@@ -202,18 +158,13 @@ async function loadProjectFromManifest1_0_0(
   projectManifest: ProjectManifestV1_0_0Impl,
   reader: Reader,
   path: string,
-  networkOverrides?: Partial<SubstrateProjectNetworkConfig>,
+  networkOverrides?: Partial<EthereumProjectNetworkConfig>,
 ): Promise<SubqueryProject> {
   const project = await loadProjectFromManifestBase(
     projectManifest,
     reader,
     path,
     networkOverrides,
-  );
-  project.templates = await loadProjectTemplates(
-    projectManifest,
-    project.root,
-    reader,
   );
   project.runner = projectManifest.runner;
   if (!validateSemver(packageVersion, project.runner.node.version)) {
@@ -225,27 +176,28 @@ async function loadProjectFromManifest1_0_0(
 }
 
 async function loadProjectTemplates(
-  projectManifest: ProjectManifestV0_2_1Impl | ProjectManifestV1_0_0Impl,
+  projectManifest: ProjectManifestV1_0_0Impl,
   root: string,
   reader: Reader,
 ): Promise<SubqlProjectDsTemplate[]> {
-  if (projectManifest.templates && projectManifest.templates.length !== 0) {
-    const dsTemplates = await updateDataSourcesV0_2_0(
-      projectManifest.templates,
-      reader,
-      root,
-    );
-    return dsTemplates.map((ds, index) => ({
-      ...ds,
-      name: projectManifest.templates[index].name,
-    }));
+  if (!projectManifest.templates || !projectManifest.templates.length) {
+    return [];
   }
+  const dsTemplates = await updateDataSourcesV1_0_0(
+    projectManifest.templates,
+    reader,
+    root,
+  );
+  return dsTemplates.map((ds, index) => ({
+    ...ds,
+    name: projectManifest.templates[index].name,
+  }));
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await
 export async function generateTimestampReferenceForBlockFilters(
   dataSources: SubqlProjectDs[],
-  api: ApiPromise,
+  api: EthereumApi,
 ): Promise<SubqlProjectDs[]> {
   const cron = new Cron();
 
@@ -253,16 +205,16 @@ export async function generateTimestampReferenceForBlockFilters(
     dataSources.map(async (ds) => {
       if (isRuntimeDs(ds)) {
         const startBlock = ds.startBlock ?? 1;
-        let block;
-        let timestampReference;
+        let block: Block;
+        let timestampReference: Date;
 
         ds.mapping.handlers = await Promise.all(
           ds.mapping.handlers.map(async (handler) => {
-            if (handler.kind === SubstrateHandlerKind.Block) {
+            if (handler.kind === EthereumHandlerKind.Block) {
               if (handler.filter?.timestamp) {
                 if (!block) {
-                  block = await getBlockByHeight(api, startBlock);
-                  timestampReference = getTimestamp(block);
+                  block = await api.getBlockByHeightOrHash(startBlock);
+                  timestampReference = new Date(block.timestamp * 1000); // Add millis
                 }
                 try {
                   cron.fromString(handler.filter.timestamp);

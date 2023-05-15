@@ -1,17 +1,21 @@
 // Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { Injectable } from '@nestjs/common';
+import { isMainThread } from 'worker_threads';
+import { Inject, Injectable } from '@nestjs/common';
+import { BaseDataSource } from '@subql/common';
 import {
-  isDatasourceV0_2_0,
-  SubstrateDataSource,
-} from '@subql/common-substrate';
-import { NodeConfig, StoreService, IndexerSandbox } from '@subql/node-core';
-import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
-import { getProjectEntry } from '../utils/project';
-import { ApiService } from './api.service';
-import { ApiAt } from './types';
+  NodeConfig,
+  StoreService,
+  IndexerSandbox,
+  hostStoreToStore,
+  ISubqueryProject,
+  ApiService,
+} from '@subql/node-core';
+import { Store } from '@subql/types-ethereum';
+import SafeEthProvider from '../ethereum/safe-api';
 
+/* It would be nice to move this to node core but need to find a way to inject other things into the sandbox */
 @Injectable()
 export class SandboxService {
   private processorCache: Record<string, IndexerSandbox> = {};
@@ -20,37 +24,38 @@ export class SandboxService {
     private readonly apiService: ApiService,
     private readonly storeService: StoreService,
     private readonly nodeConfig: NodeConfig,
-    private readonly project: SubqueryProject,
+    @Inject('ISubqueryProject') private readonly project: ISubqueryProject,
   ) {}
 
-  getDsProcessor(ds: SubqlProjectDs, api: ApiAt): IndexerSandbox {
+  getDsProcessor(ds: BaseDataSource, api: SafeEthProvider): IndexerSandbox {
+    const store: Store = isMainThread
+      ? this.storeService.getStore()
+      : hostStoreToStore((global as any).host); // Provided in worker.ts
+
     const entry = this.getDataSourceEntry(ds);
     let processor = this.processorCache[entry];
     if (!processor) {
       processor = new IndexerSandbox(
         {
-          // api: await this.apiService.getPatchedApi(),
-          store: this.storeService.getStore(),
+          store,
           root: this.project.root,
-          script: ds.mapping.entryScript,
           entry,
+          chainId: this.project.network.chainId,
         },
         this.nodeConfig,
       );
       this.processorCache[entry] = processor;
     }
+
     processor.freeze(api, 'api');
     if (this.nodeConfig.unsafe) {
-      processor.freeze(this.apiService.getApi(), 'unsafeApi');
+      processor.freeze(this.apiService.api.api, 'unsafeApi');
     }
+    processor.freeze(this.project.network.chainId, 'chainId');
     return processor;
   }
 
-  private getDataSourceEntry(ds: SubstrateDataSource): string {
-    if (isDatasourceV0_2_0(ds)) {
-      return ds.mapping.file;
-    } else {
-      return getProjectEntry(this.project.root);
-    }
+  private getDataSourceEntry(ds: BaseDataSource): string {
+    return ds.mapping.file;
   }
 }

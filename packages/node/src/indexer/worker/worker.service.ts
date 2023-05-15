@@ -2,22 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { threadId } from 'node:worker_threads';
-import { Injectable } from '@nestjs/common';
-import { RuntimeVersion } from '@polkadot/types/interfaces';
-import { NodeConfig, getLogger, AutoQueue } from '@subql/node-core';
-import { fetchBlocksBatches } from '../../utils/substrate';
-import { ApiService } from '../api.service';
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  NodeConfig,
+  getLogger,
+  AutoQueue,
+  memoryLock,
+  IProjectService,
+  ProcessBlockResponse,
+  ApiService,
+} from '@subql/node-core';
+import { BlockWrapper, EthereumBlockWrapper } from '@subql/types-ethereum';
+import { SubqlProjectDs } from '../../configure/SubqueryProject';
 import { IndexerManager } from '../indexer.manager';
-import { BlockContent } from '../types';
 
-export type FetchBlockResponse =
-  | { specVersion: number; parentHash: string }
-  | undefined;
-
-export type ProcessBlockResponse = {
-  dynamicDsCreated: boolean;
-  operationHash: string; // Base64 encoded u8a array
-};
+export type FetchBlockResponse = { parentHash: string } | undefined;
 
 export type WorkerStatusResponse = {
   threadId: number;
@@ -30,8 +29,7 @@ const logger = getLogger(`Worker Service #${threadId}`);
 
 @Injectable()
 export class WorkerService {
-  private fetchedBlocks: Record<string, BlockContent> = {};
-  private currentRuntimeVersion: RuntimeVersion | undefined;
+  private fetchedBlocks: Record<string, BlockWrapper> = {};
   private _isIndexing = false;
 
   private queue: AutoQueue<FetchBlockResponse>;
@@ -39,6 +37,8 @@ export class WorkerService {
   constructor(
     private apiService: ApiService,
     private indexerManager: IndexerManager,
+    @Inject('IProjectService')
+    private projectService: IProjectService<SubqlProjectDs>,
     nodeConfig: NodeConfig,
   ) {
     this.queue = new AutoQueue(undefined, nodeConfig.batchSize);
@@ -49,45 +49,30 @@ export class WorkerService {
       return await this.queue.put(async () => {
         // If a dynamic ds is created we might be asked to fetch blocks again, use existing result
         if (!this.fetchedBlocks[height]) {
-          const [block] = await fetchBlocksBatches(this.apiService.getApi(), [
-            height,
-          ]);
+          if (memoryLock.isLocked()) {
+            const start = Date.now();
+            await memoryLock.waitForUnlock();
+            const end = Date.now();
+            logger.debug(`memory lock wait time: ${end - start}ms`);
+          }
+
+          const [block] = await this.apiService.fetchBlocks([height]);
           this.fetchedBlocks[height] = block;
         }
 
-        const block = this.fetchedBlocks[height];
-
-        // We have the current version, don't need a new one when processing
-        if (
-          this.currentRuntimeVersion?.specVersion.toNumber() ===
-          block.block.specVersion
-        ) {
-          return;
-        }
-
         // Return info to get the runtime version, this lets the worker thread know
-        return {
-          specVersion: block.block.specVersion,
-          parentHash: block.block.block.header.parentHash.toHex(),
-        };
+        return undefined;
       });
     } catch (e) {
-      logger.error(e, `Failed to fetch block ${height}`);
+      logger.error(/*e, */ `Failed to fetch block ${height}`);
+      throw e;
     }
-  }
-
-  setCurrentRuntimeVersion(runtimeHex: string): void {
-    const runtimeVersion = this.apiService
-      .getApi()
-      .registry.createType('RuntimeVersion', runtimeHex[0]);
-
-    this.currentRuntimeVersion = runtimeVersion;
   }
 
   async processBlock(height: number): Promise<ProcessBlockResponse> {
     try {
       this._isIndexing = true;
-      const block = this.fetchedBlocks[height];
+      const block = this.fetchedBlocks[height] as EthereumBlockWrapper;
 
       if (!block) {
         throw new Error(`Block ${height} has not been fetched`);
@@ -95,19 +80,15 @@ export class WorkerService {
 
       delete this.fetchedBlocks[height];
 
-      const response = await this.indexerManager.indexBlock(
+      return await this.indexerManager.indexBlock(
         block,
-        this.currentRuntimeVersion,
+        await this.projectService.getAllDataSources(height),
       );
-
-      this._isIndexing = false;
-      return {
-        ...response,
-        operationHash: Buffer.from(response.operationHash).toString('base64'),
-      };
     } catch (e) {
       logger.error(e, `Failed to index block ${height}: ${e.stack}`);
       throw e;
+    } finally {
+      this._isIndexing = false;
     }
   }
 

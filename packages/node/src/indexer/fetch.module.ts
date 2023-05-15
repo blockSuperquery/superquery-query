@@ -8,10 +8,19 @@ import {
   MmrService,
   StoreService,
   PoiService,
-  DbModule,
+  ApiService,
   NodeConfig,
+  ConnectionPoolService,
+  SmartBatchService,
+  StoreCacheService,
 } from '@subql/node-core';
-import { ApiService } from './api.service';
+import { SubqueryProject } from '../configure/SubqueryProject';
+import { EthereumApiConnection } from '../ethereum/api.connection';
+import { EthereumApiService } from '../ethereum/api.service.ethereum';
+import {
+  BlockDispatcherService,
+  WorkerBlockDispatcherService,
+} from './blockDispatcher';
 import { DictionaryService } from './dictionary.service';
 import { DsProcessorService } from './ds-processor.service';
 import { DynamicDsService } from './dynamic-ds.service';
@@ -19,30 +28,73 @@ import { FetchService } from './fetch.service';
 import { IndexerManager } from './indexer.manager';
 import { ProjectService } from './project.service';
 import { SandboxService } from './sandbox.service';
-import {
-  BlockDispatcherService,
-  WorkerBlockDispatcherService,
-} from './worker/block-dispatcher.service';
+import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
 
 @Module({
   providers: [
     StoreService,
-    ApiService,
+    StoreCacheService,
+    {
+      provide: ApiService,
+      useFactory: async (
+        project: SubqueryProject,
+        connectionPoolService: ConnectionPoolService<EthereumApiConnection>,
+        eventEmitter: EventEmitter2,
+      ) => {
+        const apiService = new EthereumApiService(
+          project,
+          connectionPoolService,
+          eventEmitter,
+        );
+        await apiService.init();
+        return apiService;
+      },
+      inject: ['ISubqueryProject', ConnectionPoolService, EventEmitter2],
+    },
     IndexerManager,
+    ConnectionPoolService,
+    {
+      provide: SmartBatchService,
+      useFactory: (nodeConfig: NodeConfig) => {
+        return new SmartBatchService(nodeConfig.batchSize);
+      },
+      inject: [NodeConfig],
+    },
+    {
+      provide: SmartBatchService,
+      useFactory: (nodeConfig: NodeConfig) => {
+        return new SmartBatchService(nodeConfig.batchSize);
+      },
+      inject: [NodeConfig],
+    },
     {
       provide: 'IBlockDispatcher',
       useFactory: (
         nodeConfig: NodeConfig,
         eventEmitter: EventEmitter2,
         projectService: ProjectService,
-        apiService: ApiService,
+        apiService: EthereumApiService,
         indexerManager: IndexerManager,
+        smartBatchService: SmartBatchService,
+        storeService: StoreService,
+        storeCacheService: StoreCacheService,
+        poiService: PoiService,
+        project: SubqueryProject,
+        dynamicDsService: DynamicDsService,
+        unfinalizedBlocks: UnfinalizedBlocksService,
       ) =>
         nodeConfig.workers !== undefined
           ? new WorkerBlockDispatcherService(
               nodeConfig,
               eventEmitter,
               projectService,
+              smartBatchService,
+              storeService,
+              storeCacheService,
+              poiService,
+              project,
+              dynamicDsService,
+              unfinalizedBlocks,
             )
           : new BlockDispatcherService(
               apiService,
@@ -50,25 +102,50 @@ import {
               indexerManager,
               eventEmitter,
               projectService,
+              smartBatchService,
+              storeService,
+              storeCacheService,
+              poiService,
+              project,
+              dynamicDsService,
             ),
       inject: [
         NodeConfig,
         EventEmitter2,
-        ProjectService,
+        'IProjectService',
         ApiService,
         IndexerManager,
+        SmartBatchService,
+        StoreService,
+        StoreCacheService,
+        PoiService,
+        'ISubqueryProject',
+        DynamicDsService,
+        UnfinalizedBlocksService,
       ],
     },
     FetchService,
     BenchmarkService,
-    DictionaryService,
+    {
+      provide: DictionaryService,
+      useFactory: async (project: SubqueryProject, nodeConfig: NodeConfig) => {
+        const dictionaryService = new DictionaryService(project, nodeConfig);
+        await dictionaryService.init();
+        return dictionaryService;
+      },
+      inject: ['ISubqueryProject', NodeConfig],
+    },
     SandboxService,
     DsProcessorService,
     DynamicDsService,
     PoiService,
     MmrService,
-    ProjectService,
+    {
+      useClass: ProjectService,
+      provide: 'IProjectService',
+    },
+    UnfinalizedBlocksService,
   ],
-  exports: [StoreService, MmrService],
+  exports: [StoreService, MmrService, StoreCacheService],
 })
 export class FetchModule {}

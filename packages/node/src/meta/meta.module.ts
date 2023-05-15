@@ -8,62 +8,19 @@ import {
   ReadyService,
   HealthController,
   HealthService,
-  MmrQueryController,
+  gaugeProviders,
 } from '@subql/node-core';
-import {
-  makeGaugeProvider,
-  PrometheusModule,
-} from '@willsoto/nestjs-prometheus';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { FetchModule } from '../indexer/fetch.module';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
 
 @Module({
   imports: [PrometheusModule.register(), FetchModule],
-  controllers: [
-    MetaController,
-    HealthController,
-    ReadyController,
-    MmrQueryController,
-  ],
+  controllers: [MetaController, HealthController, ReadyController],
   providers: [
     MetricEventListener,
-    makeGaugeProvider({
-      name: 'subql_indexer_api_connected',
-      help: 'The indexer api connection status',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_processing_block_height',
-      help: 'The current processing block height',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_target_block_height',
-      help: 'The latest finalized block height',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_best_block_height',
-      help: 'The latest best block height',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_block_queue_size',
-      help: 'The size of fetched block queue',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_blocknumber_queue_size',
-      help: 'The size of fetched block number queue',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_using_dictionary',
-      help: 'The status of indexer is using the dictionary',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_skip_dictionary_count',
-      help: 'The number of times indexer been skip use dictionary',
-    }),
-    makeGaugeProvider({
-      name: 'subql_indexer_processed_block_count',
-      help: 'The number of processed block',
-    }),
+    ...gaugeProviders,
     MetaService,
     HealthService,
     ReadyService,

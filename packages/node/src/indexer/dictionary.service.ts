@@ -2,26 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { gql } from '@apollo/client/core';
-import { Injectable, OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, OnApplicationShutdown } from '@nestjs/common';
 import {
   NodeConfig,
+  DictionaryService as CoreDictionaryService,
   timeout,
   getLogger,
-  DictionaryService as CoreDictionaryService,
 } from '@subql/node-core';
-import { buildQuery, GqlNode, GqlQuery, MetaData } from '@subql/utils';
 import { SubqueryProject } from '../configure/SubqueryProject';
-
-export type SpecVersion = {
-  id: string;
-  start: number; //start with this block
-  end: number;
-};
-
-export type SpecVersionDictionary = {
-  _metadata: MetaData;
-  specVersions: SpecVersion[];
-};
 
 const logger = getLogger('dictionary');
 
@@ -30,41 +18,16 @@ export class DictionaryService
   extends CoreDictionaryService
   implements OnApplicationShutdown
 {
-  constructor(protected project: SubqueryProject, nodeConfig: NodeConfig) {
-    super(project.network.dictionary, nodeConfig);
+  constructor(
+    @Inject('ISubqueryProject') protected project: SubqueryProject,
+    nodeConfig: NodeConfig,
+  ) {
+    super(project.network.dictionary, project.network.chainId, nodeConfig);
   }
 
-  parseSpecVersions(raw: SpecVersionDictionary): SpecVersion[] {
-    if (raw === undefined) {
-      return [];
-    }
-    const specVersionBlockHeightSet = new Set<SpecVersion>();
-    const specVersions = (raw.specVersions as any).nodes;
-    const _metadata = raw._metadata;
+  async getEvmChainId(): Promise<string> {
+    const query = `query{chainAlias(id: "evmChainId"){value}}`;
 
-    // Add range for -1 specVersions
-    for (let i = 0; i < specVersions.length - 1; i++) {
-      specVersionBlockHeightSet.add({
-        id: specVersions[i].id,
-        start: Number(specVersions[i].blockHeight),
-        end: Number(specVersions[i + 1].blockHeight) - 1,
-      });
-    }
-    if (specVersions && specVersions.length >= 0) {
-      // Add range for the last specVersion
-      if (_metadata.lastProcessedHeight) {
-        specVersionBlockHeightSet.add({
-          id: specVersions[specVersions.length - 1].id,
-          start: Number(specVersions[specVersions.length - 1].blockHeight),
-          end: Number(_metadata.lastProcessedHeight),
-        });
-      }
-    }
-    return Array.from(specVersionBlockHeightSet);
-  }
-
-  async getSpecVersionsRaw(): Promise<SpecVersionDictionary> {
-    const { query } = this.specVersionQuery();
     try {
       const resp = await timeout(
         this.client.query({
@@ -72,43 +35,10 @@ export class DictionaryService
         }),
         this.nodeConfig.dictionaryTimeout,
       );
-
-      const _metadata = resp.data._metadata;
-      const specVersions = resp.data.specVersions;
-      return { _metadata, specVersions };
-    } catch (err) {
-      logger.warn(err, `failed to fetch specVersion result`);
+      return resp.data.chainAlias.value;
+    } catch (e) {
+      logger.debug(`Dictionary doesn't have an evmChainId set`);
       return undefined;
     }
-  }
-
-  async getSpecVersions(): Promise<SpecVersion[]> {
-    try {
-      return this.parseSpecVersions(await this.getSpecVersionsRaw());
-    } catch {
-      return undefined;
-    }
-  }
-
-  private specVersionQuery(): GqlQuery {
-    const nodes: GqlNode[] = [
-      {
-        entity: '_metadata',
-        project: ['lastProcessedHeight', 'genesisHash'],
-      },
-      {
-        entity: 'specVersions',
-        project: [
-          {
-            entity: 'nodes',
-            project: ['id', 'blockHeight'],
-          },
-        ],
-        args: {
-          orderBy: 'BLOCK_HEIGHT_ASC',
-        },
-      },
-    ];
-    return buildQuery([], nodes);
   }
 }

@@ -18,18 +18,32 @@ initLogger(
 
 import assert from 'assert';
 import { threadId } from 'node:worker_threads';
+import { getHeapStatistics } from 'v8';
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { registerWorker, getLogger, NestLogger } from '@subql/node-core';
+import {
+  waitForBatchSize,
+  WorkerHost,
+  getLogger,
+  NestLogger,
+  hostStoreKeys,
+  HostStore,
+  hostDynamicDsKeys,
+  HostDynamicDS,
+  ProcessBlockResponse,
+} from '@subql/node-core';
+import { SubqlProjectDs } from '../../configure/SubqueryProject';
 import { IndexerManager } from '../indexer.manager';
 import { WorkerModule } from './worker.module';
 import {
   FetchBlockResponse,
-  ProcessBlockResponse,
   WorkerService,
   WorkerStatusResponse,
 } from './worker.service';
-
+import {
+  HostUnfinalizedBlocks,
+  hostUnfinalizedBlocksKeys,
+} from './worker.unfinalizedBlocks.service';
 let app: INestApplication;
 let workerService: WorkerService;
 
@@ -43,7 +57,7 @@ async function initWorker(): Promise<void> {
     }
 
     app = await NestFactory.create(WorkerModule, {
-      logger: new NestLogger(),
+      logger: new NestLogger(), // TIP: If the worker is crashing comment out this line for better logging
     });
 
     await app.init();
@@ -62,7 +76,6 @@ async function initWorker(): Promise<void> {
 
 async function fetchBlock(height: number): Promise<FetchBlockResponse> {
   assert(workerService, 'Not initialised');
-
   return workerService.fetchBlock(height);
 }
 
@@ -70,13 +83,6 @@ async function processBlock(height: number): Promise<ProcessBlockResponse> {
   assert(workerService, 'Not initialised');
 
   return workerService.processBlock(height);
-}
-
-// eslint-disable-next-line @typescript-eslint/require-await
-async function setCurrentRuntimeVersion(runtimeHex: string): Promise<void> {
-  assert(workerService, 'Not initialised');
-
-  return workerService.setCurrentRuntimeVersion(runtimeHex);
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await
@@ -99,25 +105,60 @@ async function getStatus(): Promise<WorkerStatusResponse> {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await
+async function getMemoryLeft(): Promise<number> {
+  const totalHeap = getHeapStatistics().heap_size_limit;
+  const heapUsed = process.memoryUsage().heapUsed;
+
+  return totalHeap - heapUsed;
+}
+
+async function waitForWorkerBatchSize(heapSizeInBytes: number): Promise<void> {
+  await waitForBatchSize(heapSizeInBytes);
+}
+
 // Register these functions to be exposed to worker host
-registerWorker({
-  initWorker,
-  fetchBlock,
-  processBlock,
-  numFetchedBlocks,
-  numFetchingBlocks,
-  setCurrentRuntimeVersion,
-  getStatus,
-});
+(global as any).host = WorkerHost.create<
+  HostStore & HostDynamicDS<SubqlProjectDs> & HostUnfinalizedBlocks,
+  IInitIndexerWorker
+>(
+  [...hostStoreKeys, ...hostDynamicDsKeys, ...hostUnfinalizedBlocksKeys],
+  {
+    initWorker,
+    fetchBlock,
+    processBlock,
+    numFetchedBlocks,
+    numFetchingBlocks,
+    getStatus,
+    getMemoryLeft,
+    waitForWorkerBatchSize,
+  },
+  logger,
+);
 
 // Export types to be used on the parent
-export type InitWorker = typeof initWorker;
-export type FetchBlock = typeof fetchBlock;
-export type ProcessBlock = typeof processBlock;
-export type NumFetchedBlocks = typeof numFetchedBlocks;
-export type NumFetchingBlocks = typeof numFetchingBlocks;
-export type SetCurrentRuntimeVersion = typeof setCurrentRuntimeVersion;
-export type GetWorkerStatus = typeof getStatus;
+type InitWorker = typeof initWorker;
+type FetchBlock = typeof fetchBlock;
+type ProcessBlock = typeof processBlock;
+type NumFetchedBlocks = typeof numFetchedBlocks;
+type NumFetchingBlocks = typeof numFetchingBlocks;
+type GetWorkerStatus = typeof getStatus;
+type GetMemoryLeft = typeof getMemoryLeft;
+type WaitForWorkerBatchSize = typeof waitForWorkerBatchSize;
+
+export type IIndexerWorker = {
+  processBlock: ProcessBlock;
+  fetchBlock: FetchBlock;
+  numFetchedBlocks: NumFetchedBlocks;
+  numFetchingBlocks: NumFetchingBlocks;
+  getStatus: GetWorkerStatus;
+  getMemoryLeft: GetMemoryLeft;
+  waitForWorkerBatchSize: WaitForWorkerBatchSize;
+};
+
+export type IInitIndexerWorker = IIndexerWorker & {
+  initWorker: InitWorker;
+};
 
 process.on('uncaughtException', (e) => {
   logger.error(e, 'Uncaught Exception');

@@ -22,7 +22,7 @@ jobs:
   Build-Publish:
     name: Build-Publish
     needs: pre-ci
-    if: "!startsWith(github.event.head_commit.message, '[SKIP CI]') && startsWith(github.event.head_commit.message, '[release]') && github.repository == 'subquery/subql'"
+    if: "!startsWith(github.event.head_commit.message, '[SKIP CI]') && startsWith(github.event.head_commit.message, '[release]') && github.repository == 'subquery/subql-ethereum'"
     runs-on: ubuntu-latest
     steps:
       #Check out
@@ -37,93 +37,39 @@ jobs:
 
     #Identify changes
       - uses: marceloprado/has-changed-path@v1
-        id: changed-types
+        id: changed-types-ethereum
         with:
           paths: packages/types
 
       - uses: marceloprado/has-changed-path@v1
-        id: changed-common
+        id: changed-common-ethereum
         with:
-          paths: packages/common
-
-      - uses: marceloprado/has-changed-path@v1
-        id: changed-common-substrate
-        with:
-          paths: packages/common-substrate
-
-      - uses: marceloprado/has-changed-path@v1
-        id: changed-cli
-        with:
-          paths: packages/cli
-
-      - uses: marceloprado/has-changed-path@v1
-        id: changed-node-core
-        with:
-          paths: packages/node-core
+          paths: packages/common-ethereum
 
       - uses: marceloprado/has-changed-path@v1
         id: changed-node
         with:
           paths: packages/node
 
-      - uses: marceloprado/has-changed-path@v1
-        id: changed-query
-        with:
-          paths: packages/query
-
-      - uses: marceloprado/has-changed-path@v1
-        id: changed-utils
-        with:
-          paths: packages/utils
-
-      - uses: marceloprado/has-changed-path@v1
-        id: changed-validator
-        with:
-          paths: packages/validator
-
       - run: yarn
 
       - name: build
-        run: yarn workspaces foreach run build
+        run: yarn build
 
       #Publish to npm and github releases
-      - name: Publish Utils
-        if: steps.changed-utils.outputs.changed == 'true'
-        uses: ./.github/actions/create-release
-        with:
-          package-path: packages/utils
-          repo-token: ${{ secrets.REPO_TOKEN }}
-          npm-token: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish Types
-        if: steps.changed-types.outputs.changed == 'true'
+      - name: Publish Types ethereum
+        if: steps.changed-types-ethereum.outputs.changed == 'true'
         uses: ./.github/actions/create-release
         with:
           package-path: packages/types
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish Common
-        if: steps.changed-common.outputs.changed == 'true'
+      - name: Publish Common ethereum
+        if: steps.changed-common-ethereum.outputs.changed == 'true'
         uses: ./.github/actions/create-release
         with:
-          package-path: packages/common
-          repo-token: ${{ secrets.REPO_TOKEN }}
-          npm-token: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish Common Substrate
-        if: steps.changed-common-substrate.outputs.changed == 'true'
-        uses: ./.github/actions/create-release
-        with:
-          package-path: packages/common-substrate
-          repo-token: ${{ secrets.REPO_TOKEN }}
-          npm-token: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish Node Core
-        if: steps.changed-node-core.outputs.changed == 'true'
-        uses: ./.github/actions/create-release
-        with:
-          package-path: packages/node-core
+          package-path: packages/common-ethereum
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}
 
@@ -135,26 +81,88 @@ jobs:
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish Query
-        if: steps.changed-query.outputs.changed == 'true'
+  Build-Flare-Publish:
+    name: Build-Flare-Publish
+    needs: Build-Publish
+    if: "!startsWith(github.event.head_commit.message, '[SKIP CI]') && startsWith(github.event.head_commit.message, '[release]') && github.repository == 'subquery/subql-ethereum'"
+    runs-on: ubuntu-latest
+    steps:
+      #Check out
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 100
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2
+        with:
+          node-version: 16
+
+    #Identify changes
+      - uses: marceloprado/has-changed-path@v1
+        id: changed-types-flare
+        with:
+          paths: packages/types
+
+      - uses: marceloprado/has-changed-path@v1
+        id: changed-common-flare
+        with:
+          paths: packages/common-ethereum
+
+      - uses: marceloprado/has-changed-path@v1
+        id: changed-node
+        with:
+          paths: packages/node
+
+      #Changes packages names
+      - name: Change common ethereum to flare
+        uses: jaywcjlove/github-action-package@main
+        with:
+          path: packages/common-ethereum/package.json
+          rename: '@subql/common-flare'
+
+      - name: Change types ethereum to flare
+        uses: jaywcjlove/github-action-package@main
+        with:
+          path: packages/types/package.json
+          rename: '@subql/types-flare'
+
+      - name: Change node ethereum to flare
+        uses: jaywcjlove/github-action-package@main
+        with:
+          path: packages/node/package.json
+          rename: '@subql/node-flare'
+
+      #update imports
+
+      - name: Update imports to flare
+        run: ./.github/workflows/scripts/update_flare_imports.sh
+
+      - run: yarn
+
+      - name: build
+        run: yarn workspaces foreach run build
+
+      #Publish to npm and github releases
+      - name: Publish Types flare
+        if: steps.changed-types-flare.outputs.changed == 'true'
         uses: ./.github/actions/create-release
         with:
-          package-path: packages/query
+          package-path: packages/types
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish Validator
-        if: steps.changed-validator.outputs.changed == 'true'
+      - name: Publish Common flare
+        if: steps.changed-common-flare.outputs.changed == 'true'
         uses: ./.github/actions/create-release
         with:
-          package-path: packages/validator
+          package-path: packages/common-ethereum
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish Cli
-        if: steps.changed-cli.outputs.changed == 'true'
+      - name: Publish Node
+        if: steps.changed-node.outputs.changed == 'true'
         uses: ./.github/actions/create-release
         with:
-          package-path: packages/cli
+          package-path: packages/node
           repo-token: ${{ secrets.REPO_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}

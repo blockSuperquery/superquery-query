@@ -1,202 +1,215 @@
 // Copyright 2020-2022 OnFinality Limited authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { Inject, Injectable, OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Interval, SchedulerRegistry } from '@nestjs/schedule';
-import { ApiPromise } from '@polkadot/api';
-import { RuntimeVersion } from '@polkadot/types/interfaces';
+import { SchedulerRegistry } from '@nestjs/schedule';
 
 import {
   isCustomDs,
-  isRuntimeDataSourceV0_2_0,
-  isRuntimeDataSourceV0_3_0,
-  isRuntimeDs,
-  RuntimeDataSourceV0_0_1,
-  SubstrateBlockFilter,
-  SubstrateCallFilter,
-  SubstrateDataSource,
-  SubstrateEventFilter,
-  SubstrateHandler,
-  SubstrateHandlerKind,
-  SubstrateRuntimeHandlerFilter,
-} from '@subql/common-substrate';
+  EthereumHandlerKind,
+  EthereumLogFilter,
+  SubqlEthereumProcessorOptions,
+  EthereumTransactionFilter,
+} from '@subql/common-ethereum';
+import { ApiService, NodeConfig, BaseFetchService } from '@subql/node-core';
+import { DictionaryQueryCondition, DictionaryQueryEntry } from '@subql/types';
 import {
-  checkMemoryUsage,
-  delay,
-  getLogger,
-  IndexerEvent,
-  NodeConfig,
-  profiler,
-} from '@subql/node-core';
-import {
-  DictionaryQueryEntry,
-  SubstrateBlock,
-  SubstrateCustomHandler,
-} from '@subql/types';
+  // DictionaryQueryCondition,
+  // DictionaryQueryEntry,
+  SubqlDatasource,
+} from '@subql/types-ethereum';
 import { MetaData } from '@subql/utils';
-import { range, sortBy, uniqBy } from 'lodash';
+import { groupBy, sortBy, uniqBy } from 'lodash';
 import { SubqlProjectDs, SubqueryProject } from '../configure/SubqueryProject';
-import { isBaseHandler, isCustomHandler } from '../utils/project';
-import * as SubstrateUtil from '../utils/substrate';
-import { calcInterval } from '../utils/substrate';
-import { yargsOptions } from '../yargs';
-import { ApiService } from './api.service';
-import { DictionaryService, SpecVersion } from './dictionary.service';
+import { EthereumApi } from '../ethereum';
+import { calcInterval } from '../ethereum/utils.ethereum';
+import { eventToTopic, functionToSighash } from '../utils/string';
+import { IEthereumBlockDispatcher } from './blockDispatcher';
+import { DictionaryService } from './dictionary.service';
 import { DsProcessorService } from './ds-processor.service';
 import { DynamicDsService } from './dynamic-ds.service';
-import { IBlockDispatcher } from './worker/block-dispatcher.service';
+import {
+  blockToHeader,
+  UnfinalizedBlocksService,
+} from './unfinalizedBlocks.service';
 
-const logger = getLogger('fetch');
-let BLOCK_TIME_VARIANCE = 5000; //ms
-const DICTIONARY_MAX_QUERY_SIZE = 10000;
-const CHECK_MEMORY_INTERVAL = 60000;
-const MINIMUM_BATCH_SIZE = 5;
-const SPEC_VERSION_BLOCK_GAP = 100;
+const BLOCK_TIME_VARIANCE = 5000;
+
 const INTERVAL_PERCENT = 0.9;
+const QUERY_ADDRESS_LIMIT = 50;
 
 function eventFilterToQueryEntry(
-  filter: SubstrateEventFilter,
+  filter: EthereumLogFilter,
+  dsOptions: SubqlEthereumProcessorOptions | SubqlEthereumProcessorOptions[],
 ): DictionaryQueryEntry {
+  const conditions: DictionaryQueryCondition[] = [];
+
+  if (Array.isArray(dsOptions)) {
+    const addresses = dsOptions.map((option) => option.address).filter(Boolean);
+
+    if (addresses.length !== 0 && addresses.length <= QUERY_ADDRESS_LIMIT) {
+      conditions.push({
+        field: 'address',
+        value: addresses,
+        matcher: 'in',
+      });
+    }
+  } else {
+    if (dsOptions?.address) {
+      conditions.push({
+        field: 'address',
+        value: dsOptions.address.toLowerCase(),
+        matcher: 'equalTo',
+      });
+    }
+  }
+  if (filter.topics) {
+    for (let i = 0; i < Math.min(filter.topics.length, 4); i++) {
+      const topic = filter.topics[i];
+      if (!topic) {
+        continue;
+      }
+      const field = `topics${i}`;
+      conditions.push({
+        field,
+        value: eventToTopic(topic),
+        matcher: 'equalTo',
+      });
+    }
+  }
   return {
-    entity: 'events',
-    conditions: [
-      { field: 'module', value: filter.module },
-      {
-        field: 'event',
-        value: filter.method,
-      },
-    ],
+    entity: 'evmLogs',
+    conditions,
   };
 }
 
 function callFilterToQueryEntry(
-  filter: SubstrateCallFilter,
+  filter: EthereumTransactionFilter,
 ): DictionaryQueryEntry {
+  const conditions: DictionaryQueryCondition[] = [];
+  if (filter.from) {
+    conditions.push({
+      field: 'from',
+      value: filter.from.toLowerCase(),
+      matcher: 'equalTo',
+    });
+  }
+  if (filter.to) {
+    conditions.push({
+      field: 'to',
+      value: filter.to.toLowerCase(),
+      matcher: 'equalTo',
+    });
+  }
+  if (filter.function) {
+    conditions.push({
+      field: 'func',
+      value: functionToSighash(filter.function),
+      matcher: 'equalTo',
+    });
+  }
   return {
-    entity: 'extrinsics',
-    conditions: [
-      { field: 'module', value: filter.module },
-      {
-        field: 'call',
-        value: filter.method,
-      },
-    ],
+    entity: 'evmTransactions',
+    conditions,
   };
 }
 
 @Injectable()
-export class FetchService implements OnApplicationShutdown {
-  private latestBestHeight: number;
-  private latestFinalizedHeight: number;
-  private isShutdown = false;
-  private parentSpecVersion: number;
-  private useDictionary: boolean;
-  private dictionaryQueryEntries?: DictionaryQueryEntry[];
-  private batchSizeScale: number;
-  private specVersionMap: SpecVersion[];
-  private currentRuntimeVersion: RuntimeVersion;
-  private templateDynamicDatasouces: SubqlProjectDs[];
+export class FetchService extends BaseFetchService<
+  SubqlDatasource,
+  IEthereumBlockDispatcher,
+  DictionaryService
+> {
+  private evmChainId?: string;
 
   constructor(
-    private apiService: ApiService,
-    private nodeConfig: NodeConfig,
-    private project: SubqueryProject,
-    @Inject('IBlockDispatcher') private blockDispatcher: IBlockDispatcher,
-    private dictionaryService: DictionaryService,
-    private dsProcessorService: DsProcessorService,
-    private dynamicDsService: DynamicDsService,
-    private eventEmitter: EventEmitter2,
-    private schedulerRegistry: SchedulerRegistry,
+    apiService: ApiService,
+    nodeConfig: NodeConfig,
+    @Inject('ISubqueryProject') project: SubqueryProject,
+    @Inject('IBlockDispatcher')
+    blockDispatcher: IEthereumBlockDispatcher,
+    dictionaryService: DictionaryService,
+    dsProcessorService: DsProcessorService,
+    dynamicDsService: DynamicDsService,
+    private unfinalizedBlocksService: UnfinalizedBlocksService,
+    eventEmitter: EventEmitter2,
+    schedulerRegistry: SchedulerRegistry,
   ) {
-    this.batchSizeScale = 1;
+    super(
+      apiService,
+      nodeConfig,
+      project,
+      blockDispatcher,
+      dictionaryService,
+      dsProcessorService,
+      dynamicDsService,
+      eventEmitter,
+      schedulerRegistry,
+    );
   }
 
-  onApplicationShutdown(): void {
-    try {
-      this.schedulerRegistry.deleteInterval('getFinalizedBlockHead');
-      this.schedulerRegistry.deleteInterval('getBestBlockHead');
-    } catch (e) {
-      //ignore if interval not exist
-    }
-    this.isShutdown = true;
+  get api(): EthereumApi {
+    return this.apiService.api;
   }
 
-  get api(): ApiPromise {
-    return this.apiService.getApi();
-  }
-
-  async syncDynamicDatascourcesFromMeta(): Promise<void> {
-    this.templateDynamicDatasouces =
-      await this.dynamicDsService.getDynamicDatasources();
-  }
-
-  getDictionaryQueryEntries(): DictionaryQueryEntry[] {
+  buildDictionaryQueryEntries(startBlock: number): DictionaryQueryEntry[] {
     const queryEntries: DictionaryQueryEntry[] = [];
 
-    const dataSources = this.project.dataSources.filter(
-      (ds) =>
-        isRuntimeDataSourceV0_3_0(ds) ||
-        isRuntimeDataSourceV0_2_0(ds) ||
-        !(ds as RuntimeDataSourceV0_0_1).filter?.specName ||
-        (ds as RuntimeDataSourceV0_0_1).filter.specName ===
-          this.api.runtimeVersion.specName.toString(),
-    );
+    type GroupedSubqlProjectDs = SubqlDatasource & {
+      groupedOptions?: SubqlEthereumProcessorOptions[];
+    };
 
-    for (const ds of dataSources.concat(this.templateDynamicDatasouces)) {
-      const plugin = isCustomDs(ds)
-        ? this.dsProcessorService.getDsProcessor(ds)
-        : undefined;
+    const groupdDynamicDs: GroupedSubqlProjectDs[] = Object.values(
+      groupBy(this.templateDynamicDatasouces, (ds) => ds.name),
+    ).map((grouped: SubqlProjectDs[]) => {
+      const options = grouped.map((ds) => ds.options);
+      const ref = grouped[0];
+
+      return {
+        ...ref,
+        groupedOptions: options,
+      };
+    });
+
+    // Only run the ds that is equal or less than startBlock
+    // sort array from lowest ds.startBlock to highest
+    const filteredDs: GroupedSubqlProjectDs[] = this.project.dataSources
+      .concat(groupdDynamicDs)
+      .filter((ds) => ds.startBlock <= startBlock)
+      .sort((a, b) => a.startBlock - b.startBlock);
+
+    for (const ds of filteredDs) {
       for (const handler of ds.mapping.handlers) {
-        const baseHandlerKind = this.getBaseHandlerKind(ds, handler);
-        let filterList: SubstrateRuntimeHandlerFilter[];
-        if (isCustomDs(ds)) {
-          const processor = plugin.handlerProcessors[handler.kind];
-          if (processor.dictionaryQuery) {
-            const queryEntry = processor.dictionaryQuery(
-              (handler as SubstrateCustomHandler).filter,
-              ds,
-            );
-            if (queryEntry) {
-              queryEntries.push(queryEntry);
-              continue;
-            }
-          }
-          filterList =
-            this.getBaseHandlerFilters<SubstrateRuntimeHandlerFilter>(
-              ds,
-              handler.kind,
-            );
-        } else {
-          filterList = [handler.filter];
-        }
-        filterList = filterList.filter((f) => f);
-        if (!filterList.length) return [];
-        switch (baseHandlerKind) {
-          case SubstrateHandlerKind.Block:
-            for (const filter of filterList as SubstrateBlockFilter[]) {
-              if (filter.modulo === undefined) {
-                return [];
-              }
-            }
-            break;
-          case SubstrateHandlerKind.Call: {
-            for (const filter of filterList as SubstrateCallFilter[]) {
-              if (filter.module !== undefined && filter.method !== undefined) {
-                queryEntries.push(callFilterToQueryEntry(filter));
-              } else {
-                return [];
-              }
+        // No filters, cant use dictionary
+        if (!handler.filter) return [];
+
+        switch (handler.kind) {
+          case EthereumHandlerKind.Block:
+            return [];
+          case EthereumHandlerKind.Call: {
+            const filter = handler.filter as EthereumTransactionFilter;
+            if (
+              filter.from !== undefined ||
+              filter.to !== undefined ||
+              filter.function
+            ) {
+              queryEntries.push(callFilterToQueryEntry(filter));
+            } else {
+              return [];
             }
             break;
           }
-          case SubstrateHandlerKind.Event: {
-            for (const filter of filterList as SubstrateEventFilter[]) {
-              if (filter.module !== undefined && filter.method !== undefined) {
-                queryEntries.push(eventFilterToQueryEntry(filter));
-              } else {
-                return [];
-              }
+          case EthereumHandlerKind.Event: {
+            const filter = handler.filter as EthereumLogFilter;
+            if (ds.groupedOptions) {
+              queryEntries.push(
+                eventFilterToQueryEntry(filter, ds.groupedOptions),
+              );
+            } else if (ds.options?.address || filter.topics) {
+              queryEntries.push(eventFilterToQueryEntry(filter, ds.options));
+            } else {
+              return [];
             }
             break;
           }
@@ -214,120 +227,31 @@ export class FetchService implements OnApplicationShutdown {
     );
   }
 
-  updateDictionary(): void {
-    this.dictionaryQueryEntries = this.getDictionaryQueryEntries();
-    this.useDictionary =
-      !!this.dictionaryQueryEntries?.length &&
-      !!this.project.network.dictionary;
+  protected async getFinalizedHeight(): Promise<number> {
+    const block = await this.api.getFinalizedBlock();
+
+    const header = blockToHeader(block);
+
+    this.unfinalizedBlocksService.registerFinalizedBlock(header);
+    return header.blockHeight;
   }
 
-  async init(startHeight: number): Promise<void> {
-    if (this.api) {
-      const CHAIN_INTERVAL = calcInterval(this.api)
-        .muln(INTERVAL_PERCENT)
-        .toNumber();
-
-      BLOCK_TIME_VARIANCE = Math.min(BLOCK_TIME_VARIANCE, CHAIN_INTERVAL);
-
-      this.schedulerRegistry.addInterval(
-        'getFinalizedBlockHead',
-        setInterval(
-          () => void this.getFinalizedBlockHead(),
-          BLOCK_TIME_VARIANCE,
-        ),
-      );
-      this.schedulerRegistry.addInterval(
-        'getBestBlockHead',
-        setInterval(() => void this.getBestBlockHead(), BLOCK_TIME_VARIANCE),
-      );
-    }
-
-    await this.syncDynamicDatascourcesFromMeta();
-    this.updateDictionary();
-    this.eventEmitter.emit(IndexerEvent.UsingDictionary, {
-      value: Number(this.useDictionary),
-    });
-    await this.getFinalizedBlockHead();
-    await this.getBestBlockHead();
-
-    const validChecker = this.dictionaryValidation(
-      await this.dictionaryService.getSpecVersionsRaw(),
-    );
-
-    if (this.useDictionary && validChecker) {
-      const specVersionResponse =
-        await this.dictionaryService.getSpecVersions();
-      if (specVersionResponse !== undefined) {
-        this.specVersionMap = specVersionResponse;
-      }
-    } else {
-      this.specVersionMap = [];
-    }
-
-    await this.blockDispatcher.init(
-      this.getRuntimeVersion.bind(this),
-      this.resetForNewDs.bind(this),
-    );
-
-    void this.startLoop(startHeight);
+  protected async getBestHeight(): Promise<number> {
+    return this.api.getBestBlockHeight();
   }
 
-  @Interval(CHECK_MEMORY_INTERVAL)
-  checkBatchScale(): void {
-    if (this.nodeConfig['scale-batch-size']) {
-      const scale = checkMemoryUsage(this.batchSizeScale, this.nodeConfig);
+  // eslint-disable-next-line @typescript-eslint/require-await
+  protected async getChainInterval(): Promise<number> {
+    const CHAIN_INTERVAL = calcInterval(this.api) * INTERVAL_PERCENT;
 
-      if (this.batchSizeScale !== scale) {
-        this.batchSizeScale = scale;
-      }
-    }
+    return Math.min(BLOCK_TIME_VARIANCE, CHAIN_INTERVAL);
   }
 
-  async getFinalizedBlockHead(): Promise<void> {
-    if (!this.api) {
-      logger.debug(`Skip fetch finalized block until API is ready`);
-      return;
-    }
-    try {
-      const finalizedHead = await this.api.rpc.chain.getFinalizedHead();
-      const finalizedBlock = await this.api.rpc.chain.getBlock(finalizedHead);
-      const currentFinalizedHeight =
-        finalizedBlock.block.header.number.toNumber();
-      if (this.latestFinalizedHeight !== currentFinalizedHeight) {
-        this.latestFinalizedHeight = currentFinalizedHeight;
-        this.eventEmitter.emit(IndexerEvent.BlockTarget, {
-          height: this.latestFinalizedHeight,
-        });
-      }
-    } catch (e) {
-      logger.error(e, `Having a problem when getting finalized block`);
-    }
+  protected async getChainId(): Promise<string> {
+    return Promise.resolve(this.api.getChainId().toString());
   }
 
-  async getBestBlockHead(): Promise<void> {
-    if (!this.api) {
-      logger.debug(`Skip fetch best block until API is ready`);
-      return;
-    }
-    try {
-      const bestHeader = await this.api.rpc.chain.getHeader();
-      const currentBestHeight = bestHeader.number.toNumber();
-      if (this.latestBestHeight !== currentBestHeight) {
-        this.latestBestHeight = currentBestHeight;
-        this.eventEmitter.emit(IndexerEvent.BlockBest, {
-          height: this.latestBestHeight,
-        });
-      }
-    } catch (e) {
-      logger.error(e, `Having a problem when get best block`);
-    }
-  }
-
-  private async startLoop(initBlockHeight: number): Promise<void> {
-    await this.fillNextBlockBuffer(initBlockHeight);
-  }
-
-  getModulos(): number[] {
+  protected getModulos(): number[] {
     const modulos: number[] = [];
     for (const ds of this.project.dataSources) {
       if (isCustomDs(ds)) {
@@ -335,7 +259,7 @@ export class FetchService implements OnApplicationShutdown {
       }
       for (const handler of ds.mapping.handlers) {
         if (
-          handler.kind === SubstrateHandlerKind.Block &&
+          handler.kind === EthereumHandlerKind.Block &&
           handler.filter &&
           handler.filter.modulo
         ) {
@@ -346,303 +270,23 @@ export class FetchService implements OnApplicationShutdown {
     return modulos;
   }
 
-  getModuloBlocks(startHeight: number, endHeight: number): number[] {
-    const modulos = this.getModulos();
-    const moduloBlocks: number[] = [];
-    for (let i = startHeight; i < endHeight; i++) {
-      if (modulos.find((m) => i % m === 0)) {
-        moduloBlocks.push(i);
-      }
-    }
-    return moduloBlocks;
+  protected async initBlockDispatcher(): Promise<void> {
+    await this.blockDispatcher.init(this.resetForNewDs.bind(this));
   }
 
-  getEnqueuedModuloBlocks(startBlockHeight: number): number[] {
-    return this.getModuloBlocks(
-      startBlockHeight,
-      this.nodeConfig.batchSize * Math.max(...this.getModulos()) +
-        startBlockHeight,
-    ).slice(0, this.nodeConfig.batchSize);
-  }
+  protected async validatateDictionaryMeta(
+    metaData: MetaData,
+  ): Promise<boolean> {
+    const evmChainId = await this.dictionaryService.getEvmChainId();
 
-  async fillNextBlockBuffer(initBlockHeight: number): Promise<void> {
-    await this.prefetchMeta(initBlockHeight);
-
-    let startBlockHeight: number;
-    let scaledBatchSize: number;
-    const handlers = [].concat(
-      ...this.project.dataSources.map((ds) => ds.mapping.handlers),
+    return (
+      metaData.genesisHash !== this.api.getGenesisHash() &&
+      evmChainId !== this.api.getChainId().toString()
     );
-
-    const getStartBlockHeight = (): number => {
-      return this.blockDispatcher.latestBufferedHeight
-        ? this.blockDispatcher.latestBufferedHeight + 1
-        : initBlockHeight;
-    };
-
-    while (!this.isShutdown) {
-      startBlockHeight = getStartBlockHeight();
-
-      scaledBatchSize = Math.max(
-        Math.round(this.batchSizeScale * this.nodeConfig.batchSize),
-        Math.min(MINIMUM_BATCH_SIZE, this.nodeConfig.batchSize * 3),
-      );
-      if (
-        this.blockDispatcher.freeSize < scaledBatchSize ||
-        startBlockHeight > this.latestFinalizedHeight
-      ) {
-        await delay(1);
-        continue;
-      }
-      if (this.useDictionary) {
-        const queryEndBlock = startBlockHeight + DICTIONARY_MAX_QUERY_SIZE;
-        const moduloBlocks = this.getModuloBlocks(
-          startBlockHeight,
-          queryEndBlock,
-        );
-        try {
-          const dictionary = await this.dictionaryService.getDictionary(
-            startBlockHeight,
-            queryEndBlock,
-            scaledBatchSize,
-            this.dictionaryQueryEntries,
-          );
-
-          if (startBlockHeight !== getStartBlockHeight()) {
-            logger.debug(
-              `Queue was reset for new DS, discarding dictionary query result`,
-            );
-            continue;
-          }
-
-          if (
-            dictionary &&
-            this.dictionaryValidation(dictionary, startBlockHeight)
-          ) {
-            let { batchBlocks } = dictionary;
-
-            batchBlocks = batchBlocks
-              .concat(moduloBlocks)
-              .sort((a, b) => a - b);
-            if (batchBlocks.length === 0) {
-              // There we're no blocks in this query range, we can set a new height we're up to
-              this.blockDispatcher.latestBufferedHeight = Math.min(
-                queryEndBlock - 1,
-                dictionary._metadata.lastProcessedHeight,
-              );
-            } else {
-              const maxBlockSize = Math.min(
-                batchBlocks.length,
-                this.blockDispatcher.freeSize,
-              );
-              batchBlocks = batchBlocks.slice(0, maxBlockSize);
-              this.blockDispatcher.enqueueBlocks(batchBlocks);
-            }
-            continue; // skip nextBlockRange() way
-          }
-          // else use this.nextBlockRange()
-        } catch (e) {
-          logger.debug(`Fetch dictionary stopped: ${e.message}`);
-          this.eventEmitter.emit(IndexerEvent.SkipDictionary);
-        }
-      }
-      const endHeight = this.nextEndBlockHeight(
-        startBlockHeight,
-        scaledBatchSize,
-      );
-
-      if (this.getModulos().length === handlers.length) {
-        this.blockDispatcher.enqueueBlocks(
-          this.getEnqueuedModuloBlocks(startBlockHeight),
-        );
-      } else {
-        this.blockDispatcher.enqueueBlocks(
-          range(startBlockHeight, endHeight + 1),
-        );
-      }
-    }
   }
 
-  async getSpecFromApi(height: number): Promise<number> {
-    const parentBlockHash = await this.api.rpc.chain.getBlockHash(
-      Math.max(height - 1, 0),
-    );
-    const runtimeVersion = await this.api.rpc.state.getRuntimeVersion(
-      parentBlockHash,
-    );
-    const specVersion = runtimeVersion.specVersion.toNumber();
-    return specVersion;
-  }
-
-  getSpecFromMap(
-    blockHeight: number,
-    specVersions: SpecVersion[],
-  ): number | undefined {
-    //return undefined if can not find inside range
-    const spec = specVersions.find(
-      (spec) => blockHeight >= spec.start && blockHeight <= spec.end,
-    );
-    return spec ? Number(spec.id) : undefined;
-  }
-
-  async getSpecVersion(blockHeight: number): Promise<number> {
-    let currentSpecVersion: number;
-    // we want to keep the specVersionMap in memory, and use it even useDictionary been disabled
-    // therefore instead of check .useDictionary, we check it length before use it.
-    if (this.specVersionMap && this.specVersionMap.length !== 0) {
-      currentSpecVersion = this.getSpecFromMap(
-        blockHeight,
-        this.specVersionMap,
-      );
-    }
-    if (currentSpecVersion === undefined) {
-      currentSpecVersion = await this.getSpecFromApi(blockHeight);
-      // Assume dictionary is synced
-      if (blockHeight + SPEC_VERSION_BLOCK_GAP < this.latestFinalizedHeight) {
-        const response = this.useDictionary
-          ? await this.dictionaryService.getSpecVersions()
-          : undefined;
-        if (response !== undefined) {
-          this.specVersionMap = response;
-        }
-      }
-    }
-    return currentSpecVersion;
-  }
-
-  async getRuntimeVersion(block: SubstrateBlock): Promise<RuntimeVersion> {
-    if (
-      !this.currentRuntimeVersion ||
-      this.currentRuntimeVersion.specVersion.toNumber() !== block.specVersion
-    ) {
-      this.currentRuntimeVersion = await this.api.rpc.state.getRuntimeVersion(
-        block.block.header.parentHash,
-      );
-    }
-    return this.currentRuntimeVersion;
-  }
-
-  @profiler(yargsOptions.argv.profiler)
-  async specChanged(height: number): Promise<boolean> {
-    const specVersion = await this.getSpecVersion(height);
-    if (this.parentSpecVersion !== specVersion) {
-      await this.prefetchMeta(height);
-      this.parentSpecVersion = specVersion;
-      return true;
-    }
-    return false;
-  }
-
-  @profiler(yargsOptions.argv.profiler)
-  async prefetchMeta(height: number): Promise<void> {
-    const blockHash = await this.api.rpc.chain.getBlockHash(height);
-    if (
-      this.parentSpecVersion &&
-      this.specVersionMap &&
-      this.specVersionMap.length !== 0
-    ) {
-      const parentSpecVersion = this.specVersionMap.find(
-        (spec) => Number(spec.id) === this.parentSpecVersion,
-      );
-      for (const specVersion of this.specVersionMap) {
-        if (
-          specVersion.start > parentSpecVersion.end &&
-          specVersion.start <= height
-        ) {
-          const blockHash = await this.api.rpc.chain.getBlockHash(
-            specVersion.start,
-          );
-          await SubstrateUtil.prefetchMetadata(this.api, blockHash);
-        }
-      }
-    } else {
-      await SubstrateUtil.prefetchMetadata(this.api, blockHash);
-    }
-  }
-
-  private nextEndBlockHeight(
-    startBlockHeight: number,
-    scaledBatchSize: number,
-  ): number {
-    let endBlockHeight = startBlockHeight + scaledBatchSize - 1;
-
-    if (endBlockHeight > this.latestFinalizedHeight) {
-      endBlockHeight = this.latestFinalizedHeight;
-    }
-    return endBlockHeight;
-  }
-
-  async resetForNewDs(blockHeight: number): Promise<void> {
-    await this.syncDynamicDatascourcesFromMeta();
-    this.dynamicDsService.deleteTempDsRecords(blockHeight);
-    this.updateDictionary();
-    this.blockDispatcher.flushQueue(blockHeight);
-  }
-
-  private dictionaryValidation(
-    dictionary: { _metadata: MetaData },
-    startBlockHeight?: number,
-  ): boolean {
-    if (dictionary !== undefined) {
-      const { _metadata: metaData } = dictionary;
-
-      if (metaData.genesisHash !== this.api.genesisHash.toString()) {
-        logger.error(
-          'The dictionary that you have specified does not match the chain you are indexing, it will be ignored. Please update your project manifest to reference the correct dictionary',
-        );
-        this.useDictionary = false;
-        this.eventEmitter.emit(IndexerEvent.UsingDictionary, {
-          value: Number(this.useDictionary),
-        });
-        this.eventEmitter.emit(IndexerEvent.SkipDictionary);
-        return false;
-      }
-
-      if (startBlockHeight !== undefined) {
-        if (metaData.lastProcessedHeight < startBlockHeight) {
-          logger.warn(
-            `Dictionary indexed block is behind current indexing block height`,
-          );
-          this.eventEmitter.emit(IndexerEvent.SkipDictionary);
-          return false;
-        }
-      }
-      return true;
-    }
-    return false;
-  }
-
-  private getBaseHandlerKind(
-    ds: SubstrateDataSource,
-    handler: SubstrateHandler,
-  ): SubstrateHandlerKind {
-    if (isRuntimeDs(ds) && isBaseHandler(handler)) {
-      return handler.kind;
-    } else if (isCustomDs(ds) && isCustomHandler(handler)) {
-      const plugin = this.dsProcessorService.getDsProcessor(ds);
-      const baseHandler =
-        plugin.handlerProcessors[handler.kind]?.baseHandlerKind;
-      if (!baseHandler) {
-        throw new Error(
-          `handler type ${handler.kind} not found in processor for ${ds.kind}`,
-        );
-      }
-      return baseHandler;
-    }
-  }
-
-  private getBaseHandlerFilters<T extends SubstrateRuntimeHandlerFilter>(
-    ds: SubstrateDataSource,
-    handlerKind: string,
-  ): T[] {
-    if (isCustomDs(ds)) {
-      const plugin = this.dsProcessorService.getDsProcessor(ds);
-      const processor = plugin.handlerProcessors[handlerKind];
-      return processor.baseFilter instanceof Array
-        ? (processor.baseFilter as T[])
-        : ([processor.baseFilter] as T[]);
-    } else {
-      throw new Error(`expect custom datasource here`);
-    }
+  protected async preLoopHook(): Promise<void> {
+    // Ethereum doesn't need to do anything here
+    return Promise.resolve();
   }
 }
