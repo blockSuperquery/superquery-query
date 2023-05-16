@@ -18,8 +18,6 @@ import { EthereumApi } from './api.ethereum';
 
 const logger = getLogger('api');
 
-const MAX_RECONNECT_ATTEMPTS = 5;
-
 @Injectable()
 export class EthereumApiService extends ApiService {
   constructor(
@@ -61,24 +59,9 @@ export class EthereumApiService extends ApiService {
             endpoint: endpoint,
           });
 
-          // api.on('connected', () => {
-          //   this.eventEmitter.emit(IndexerEvent.ApiConnected, {
-          //     value: 1,
-          //     apiIndex: i,
-          //     endpoint: endpoint,
-          //   });
-          // });
-          // api.on('disconnected', () => {
-          //   this.eventEmitter.emit(IndexerEvent.ApiConnected, {
-          //     value: 0,
-          //     apiIndex: i,
-          //     endpoint: endpoint,
-          //   });
-          //   void this.connectionPoolService.handleApiDisconnects(i, endpoint);
-          // });
           if (!this.networkMeta) {
             this.networkMeta = {
-              chain: api.getRuntimeChain(),
+              chain: api.getChainId().toString(),
               specName: api.getSpecName(),
               genesisHash: api.getGenesisHash(),
             };
@@ -87,8 +70,8 @@ export class EthereumApiService extends ApiService {
           if (network.chainId !== api.getChainId().toString()) {
             throw this.metadataMismatchError(
               'ChainId',
-              this.networkMeta.genesisHash,
-              api.getRuntimeChain(),
+              network.chainId,
+              api.getChainId().toString(),
             );
           }
 

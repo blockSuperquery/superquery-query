@@ -121,8 +121,6 @@ export class FetchService extends BaseFetchService<
   IEthereumBlockDispatcher,
   DictionaryService
 > {
-  private evmChainId?: string;
-
   constructor(
     apiService: ApiService,
     nodeConfig: NodeConfig,
@@ -277,11 +275,11 @@ export class FetchService extends BaseFetchService<
   protected async validatateDictionaryMeta(
     metaData: MetaData,
   ): Promise<boolean> {
-    const evmChainId = await this.dictionaryService.getEvmChainId();
-
-    return (
+    return Promise.resolve(
+      // When alias is not used
       metaData.genesisHash !== this.api.getGenesisHash() &&
-      evmChainId !== this.api.getChainId().toString()
+        // Case when an alias is used
+        metaData.genesisHash !== this.dictionaryService.chainId,
     );
   }
 
