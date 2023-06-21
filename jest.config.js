@@ -63,12 +63,7 @@ module.exports = {
   // globalTeardown: undefined,
 
   // A set of global variables that need to be available in all test environments
-  // globals: {},
-  globals: {
-    'ts-jest': {
-      tsconfig: 'tsconfig.test.json',
-    },
-  },
+  globals: {},
 
   // The maximum amount of workers used to run your tests. Can be specified as % or a number. E.g. maxWorkers: 10% will use 10% of your CPU amount + 1 as the maximum worker number. maxWorkers: 2 will use a maximum of 2 workers.
   // maxWorkers: "50%",
@@ -85,7 +80,8 @@ module.exports = {
   // A map from regular expressions to module names or to arrays of module names that allow to stub out resources with a single module
   // moduleNameMapper: {},
   moduleNameMapper: {
-    '^@subql/common-ethereum/(.*)$': '<rootDir>/packages/common-ethereum/src/$1',
+    '@subql/common-ethereum': '<rootDir>/packages/common-ethereum/src',
+    '@subql/types-ethereum': '<rootDir>/packages/types/src',
   },
 
   // An array of regexp pattern strings, matched against all module paths before considered 'visible' to the module loader
@@ -180,7 +176,10 @@ module.exports = {
 
   // A map from regular expressions to paths to transformers
   transform: {
-    '^.+\\.(ts|tsx)?$': 'ts-jest',
+    '^.+\\.(ts|tsx)?$': [
+      'ts-jest',
+      { tsconfig: 'tsconfig.test.json'}
+    ],
     '^.+\\.(js|jsx)$': 'babel-jest',
   },
 

@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 All logs must start with the format: [x.y.z] - yyyy-mm-dd
 
 
-## [Unreleased]
+## [2.1.3] - 2023-06-15
+### Fixed
+- Fix failing tests
 
-## [2.1.0] - 2023-05-1
+## [2.1.2] - 2023-06-13
+### Changed
+- Update common package dependencies (#101)
+
+## [2.1.1] - 2023-06-01
+### Changed
+- Update common package (#94)
+
+## [2.1.0] - 2023-05-01
 ### Removed
 - Support for manifest versions < 1.0.0
 - Use more code from common package
@@ -26,10 +36,18 @@ All logs must start with the format: [x.y.z] - yyyy-mm-dd
 - Re-release 0.2.0
 
 ## [0.2.0] - 2022-11-17
-
 - Sync with main sdk (#14)
 
 ## [0.1.0] - 2022-10-31
-
 Initial release
 
+[Unreleased]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v2.1.3...HEAD
+[2.1.3]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v2.1.2.../common-ethereum/v2.1.3
+[2.1.2]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v2.1.1.../common-ethereum/v2.1.2
+[2.1.1]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v2.1.0.../common-ethereum/v2.1.1
+[2.1.0]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v2.0.0.../common-ethereum/v2.1.0
+[2.0.0]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v1.0.0.../common-ethereum/v2.0.0
+[1.0.0]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v0.2.1.../common-ethereum/v1.0.0
+[0.2.1]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v0.2.0.../common-ethereum/v0.2.1
+[0.2.0]: https://github.com/subquery/subql-ethereum/compare/common-ethereum/v0.1.0.../common-ethereum/v0.2.0
+[0.1.0]: https://github.com/subquery/subql-ethereum/tags/v0.1.0

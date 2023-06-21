@@ -73,7 +73,7 @@ describe('ApiService', () => {
   });
 
   it('can fetch blocks', async () => {
-    await apiService.api.fetchBlocks(range(12369621, 12369651));
+    await apiService.api.fetchBlocks(range(12369621, 12369625));
     await delay(0.5);
   });
 
@@ -82,5 +82,13 @@ describe('ApiService', () => {
 
     console.log('Finalized height', height);
     expect(height).toBeGreaterThan(16_000_000);
+  });
+
+  it('ensure api errorCode is exposed when throwing', async () => {
+    expect.assertions(1);
+    return apiService
+      .safeApi(17520376)
+      .getCode('0x75F0398549C9fDEa03BbDde388361827cb376D5')
+      .catch((e) => expect(e.code).toBe('INVALID_ARGUMENT'));
   });
 });

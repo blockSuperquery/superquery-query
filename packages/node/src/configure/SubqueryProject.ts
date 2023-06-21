@@ -12,13 +12,14 @@ import {
   ProjectManifestV1_0_0Impl,
   isRuntimeDs,
   EthereumHandlerKind,
+  isCustomDs,
 } from '@subql/common-ethereum';
-import { getProjectRoot } from '@subql/node-core';
+import { getProjectRoot, updateDataSourcesV1_0_0 } from '@subql/node-core';
 import { buildSchemaFromString } from '@subql/utils';
 import Cron from 'cron-converter';
 import { GraphQLSchema } from 'graphql';
 import { EthereumApi } from '../ethereum/api.ethereum';
-import { updateDataSourcesV1_0_0 } from '../utils/project';
+import { updateDatasourcesFlare } from '../utils/project';
 
 export type SubqlProjectDs = SubqlEthereumDataSource & {
   mapping: SubqlEthereumDataSource['mapping'] & { entryScript: string };
@@ -57,6 +58,7 @@ export class SubqueryProject {
     rawManifest: unknown,
     reader: Reader,
     networkOverrides?: Partial<EthereumProjectNetworkConfig>,
+    root?: string,
   ): Promise<SubqueryProject> {
     // rawManifest and reader can be reused here.
     // It has been pre-fetched and used for rebase manifest runner options with args
@@ -75,17 +77,11 @@ export class SubqueryProject {
         reader,
         path,
         networkOverrides,
+        root,
       );
     } else {
       NOT_SUPPORT(manifest.specVersion);
     }
-
-    return loadProjectFromManifest1_0_0(
-      manifest.asV1_0_0,
-      reader,
-      path,
-      networkOverrides,
-    );
   }
 }
 
@@ -106,8 +102,9 @@ async function loadProjectFromManifestBase(
   reader: Reader,
   path: string,
   networkOverrides?: Partial<EthereumProjectNetworkConfig>,
+  root?: string,
 ): Promise<SubqueryProject> {
-  const root = await getProjectRoot(reader);
+  root = root ?? (await getProjectRoot(reader));
 
   if (typeof projectManifest.network.endpoint === 'string') {
     projectManifest.network.endpoint = [projectManifest.network.endpoint];
@@ -134,7 +131,7 @@ async function loadProjectFromManifestBase(
   }
   const schema = buildSchemaFromString(schemaString);
 
-  const dataSources = await updateDataSourcesV1_0_0(
+  const dataSources = await updateDatasourcesFlare(
     projectManifest.dataSources,
     reader,
     root,
@@ -159,12 +156,14 @@ async function loadProjectFromManifest1_0_0(
   reader: Reader,
   path: string,
   networkOverrides?: Partial<EthereumProjectNetworkConfig>,
+  root?: string,
 ): Promise<SubqueryProject> {
   const project = await loadProjectFromManifestBase(
     projectManifest,
     reader,
     path,
     networkOverrides,
+    root,
   );
   project.runner = projectManifest.runner;
   if (!validateSemver(packageVersion, project.runner.node.version)) {
@@ -183,11 +182,12 @@ async function loadProjectTemplates(
   if (!projectManifest.templates || !projectManifest.templates.length) {
     return [];
   }
-  const dsTemplates = await updateDataSourcesV1_0_0(
+  const dsTemplates = await updateDatasourcesFlare(
     projectManifest.templates,
     reader,
     root,
   );
+
   return dsTemplates.map((ds, index) => ({
     ...ds,
     name: projectManifest.templates[index].name,

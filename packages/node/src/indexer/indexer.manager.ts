@@ -33,10 +33,9 @@ import {
   EthereumTransactionFilter,
 } from '@subql/types-ethereum';
 import { SubqlProjectDs } from '../configure/SubqueryProject';
-import { EthereumApi } from '../ethereum';
+import { EthereumApi, EthereumApiService } from '../ethereum';
 import { EthereumBlockWrapped } from '../ethereum/block.ethereum';
 import SafeEthProvider from '../ethereum/safe-api';
-import { yargsOptions } from '../yargs';
 import {
   asSecondLayerHandlerProcessor_1_0_0,
   DsProcessorService,
@@ -50,9 +49,10 @@ const logger = getLogger('indexer');
 
 @Injectable()
 export class IndexerManager extends BaseIndexerManager<
-  ApiService,
   SafeEthProvider,
+  EthereumApi,
   EthereumBlockWrapper,
+  ApiService,
   SubqlEthereumDataSource,
   SubqlEthereumCustomDataSource,
   typeof FilterTypeMap,
@@ -89,7 +89,7 @@ export class IndexerManager extends BaseIndexerManager<
     logger.info('indexer manager started');
   }
 
-  @profiler(yargsOptions.argv.profiler)
+  @profiler()
   async indexBlock(
     block: EthereumBlockWrapper,
     dataSources: SubqlEthereumDataSource[],
@@ -109,7 +109,7 @@ export class IndexerManager extends BaseIndexerManager<
 
   // eslint-disable-next-line @typescript-eslint/require-await
   private async getApi(block: EthereumBlockWrapper): Promise<SafeEthProvider> {
-    return this.apiService.api.getSafeApi(this.getBlockHeight(block));
+    return this.apiService.safeApi(this.getBlockHeight(block));
   }
 
   protected async indexBlockData(
