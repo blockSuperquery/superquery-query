@@ -1,0 +1,271 @@
+// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// SPDX-License-Identifier: GPL-3.0
+
+import {
+  StellarBlock,
+  StellarBlockFilter,
+  StellarEffect,
+  StellarEffectFilter,
+  SorobanEvent,
+  SorobanEventFilter,
+  StellarOperation,
+  StellarOperationFilter,
+  StellarTransaction,
+  StellarTransactionFilter,
+} from '@subql/types-stellar';
+import { Horizon, ServerApi } from 'stellar-sdk';
+import { StellarBlockWrapped } from './block.stellar';
+
+describe('StellarBlockWrapped', () => {
+  describe('filterBlocksProcessor', () => {
+    it('should filter by modulo', () => {
+      const block: StellarBlock = { sequence: 5 } as unknown as StellarBlock;
+      const filter: StellarBlockFilter = { modulo: 2 };
+
+      const result = StellarBlockWrapped.filterBlocksProcessor(block, filter);
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('filterTransactionProcessor', () => {
+    it('should filter by account', () => {
+      const transaction: StellarTransaction = {
+        source_account: 'account1',
+      } as unknown as StellarTransaction;
+      const filter: StellarTransactionFilter = { account: 'account2' };
+
+      const result = StellarBlockWrapped.filterTransactionProcessor(
+        transaction,
+        filter,
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it('should pass when account filter condition is fulfilled', () => {
+      const transaction: StellarTransaction = {
+        source_account: 'account1',
+      } as unknown as StellarTransaction;
+      const filter: StellarTransactionFilter = { account: 'account1' };
+
+      const result = StellarBlockWrapped.filterTransactionProcessor(
+        transaction,
+        filter,
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('should pass when there is no account filter', () => {
+      const transaction: StellarTransaction = {
+        source_account: 'account1',
+      } as unknown as StellarTransaction;
+      const filter: StellarTransactionFilter = {};
+
+      const result = StellarBlockWrapped.filterTransactionProcessor(
+        transaction,
+        filter,
+      );
+
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('filterOperationProcessor', () => {
+    it('should filter by source_account and type', () => {
+      const operation: StellarOperation = {
+        source_account: 'account1',
+        type: 'type1',
+      } as unknown as StellarOperation;
+      const filter: StellarOperationFilter = {
+        sourceAccount: 'account2',
+        type: Horizon.OperationResponseType.createAccount,
+      };
+
+      const result = StellarBlockWrapped.filterOperationProcessor(
+        operation,
+        filter,
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it('should pass when source_account and type filter conditions are fulfilled', () => {
+      const operation: StellarOperation = {
+        source_account: 'account1',
+        type: Horizon.OperationResponseType.createAccount,
+      } as unknown as StellarOperation;
+      const filter: StellarOperationFilter = {
+        sourceAccount: 'account1',
+        type: Horizon.OperationResponseType.createAccount,
+      };
+
+      const result = StellarBlockWrapped.filterOperationProcessor(
+        operation,
+        filter,
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('should pass when there are no filter conditions', () => {
+      const operation: StellarOperation = {
+        source_account: 'account1',
+        type: 'type1',
+      } as unknown as StellarOperation;
+      const filter: StellarOperationFilter = {};
+
+      const result = StellarBlockWrapped.filterOperationProcessor(
+        operation,
+        filter,
+      );
+
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('filterEffectProcessor', () => {
+    it('should filter by account and type', () => {
+      const effect: StellarEffect = {
+        account: 'account1',
+        type: 'type1',
+      } as unknown as StellarEffect;
+      const filter: StellarEffectFilter = {
+        account: 'account2',
+        type: 'type2',
+      };
+
+      const result = StellarBlockWrapped.filterEffectProcessor(effect, filter);
+
+      expect(result).toBe(false);
+    });
+
+    it('should pass when account and type filter conditions are fulfilled', () => {
+      const effect: StellarEffect = {
+        account: 'account1',
+        type: 'type1',
+      } as unknown as StellarEffect;
+      const filter: StellarEffectFilter = {
+        account: 'account1',
+        type: 'type1',
+      };
+
+      const result = StellarBlockWrapped.filterEffectProcessor(effect, filter);
+
+      expect(result).toBe(true);
+    });
+
+    it('should pass when there are no filter conditions', () => {
+      const effect: StellarEffect = {
+        account: 'account1',
+        type: 'type1',
+      } as unknown as StellarEffect;
+      const filter: StellarEffectFilter = {};
+
+      const result = StellarBlockWrapped.filterEffectProcessor(effect, filter);
+
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('StellarBlockWrapped', function () {
+    const mockEvent: SorobanEvent = {
+      ledger: null,
+      transaction: null,
+      operation: null,
+      ledgerClosedAt: null,
+      contractId: 'testaddress',
+      id: null,
+      pagingToken: null,
+      inSuccessfulContractCall: null,
+      topic: ['topic1', 'topic2'],
+      value: null,
+    };
+
+    const mockEventFilterValid: SorobanEventFilter = {
+      topics: ['topic1', 'topic2'],
+    };
+
+    const mockEventFilterInvalid: SorobanEventFilter = {
+      topics: ['topics3'],
+    };
+
+    it('should pass filter - valid address and topics', function () {
+      expect(
+        StellarBlockWrapped.filterEventProcessor(
+          mockEvent,
+          mockEventFilterValid,
+          'testaddress',
+        ),
+      ).toEqual(true);
+    });
+
+    it('should pass filter - no address and valid topics', function () {
+      expect(
+        StellarBlockWrapped.filterEventProcessor(
+          mockEvent,
+          mockEventFilterValid,
+        ),
+      ).toEqual(true);
+    });
+
+    it('should fail filter - valid address and invalid topics', function () {
+      expect(
+        StellarBlockWrapped.filterEventProcessor(
+          mockEvent,
+          mockEventFilterInvalid,
+          'testaddress',
+        ),
+      ).toEqual(false);
+    });
+
+    it('should fail filter - event not found', function () {
+      mockEventFilterInvalid.topics = ['topic1', 'topic2', 'topic3'];
+      expect(
+        StellarBlockWrapped.filterEventProcessor(
+          mockEvent,
+          mockEventFilterInvalid,
+        ),
+      ).toEqual(false);
+    });
+
+    it('should pass filter - skip null topics', function () {
+      mockEventFilterValid.topics = [null, 'topic2'];
+      expect(
+        StellarBlockWrapped.filterEventProcessor(
+          mockEvent,
+          mockEventFilterValid,
+        ),
+      ).toEqual(true);
+    });
+
+    it('should pass filer - valid contractId', function () {
+      mockEventFilterValid.contractId = 'testaddress';
+      expect(
+        StellarBlockWrapped.filterEventProcessor(
+          mockEvent,
+          mockEventFilterValid,
+        ),
+      ).toEqual(true);
+    });
+
+    it('should fail filter - invalid contractId', function () {
+      expect(
+        StellarBlockWrapped.filterEventProcessor(mockEvent, {
+          contractId: 'invalidaddress',
+        }),
+      ).toEqual(false);
+    });
+
+    it('should fail filter - invalid address', function () {
+      expect(
+        StellarBlockWrapped.filterEventProcessor(
+          mockEvent,
+          mockEventFilterValid,
+          'invalidaddress',
+        ),
+      ).toEqual(false);
+    });
+  });
+});

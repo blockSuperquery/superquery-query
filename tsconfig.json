@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2017",
+    "noImplicitAny": false,
+    "noImplicitThis": true,
+    "moduleResolution": "node",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "types": ["node", "jest"],
+    "experimentalDecorators": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "lib": ["ES2017", "ES2020"],
+    "emitDecoratorMetadata": true,
+    "declaration": true,
+    "sourceMap": true,
+    "inlineSources": true,
+    "composite": true,
+    "paths": {
+      "@subql/common-stellar": ["packages/common-stellar/src"],
+      "@subql/common-stellar/*": ["packages/common-stellar/src/*"],
+      "@subql/types-stellar": ["packages/types/src"],
+      "@subql/types-stellar/*": ["packages/types/src/*"],
+    },
+    "skipLibCheck": true
+  },
+  "references": [
+    {"path": "packages/common-stellar"},
+    {"path": "packages/node"},
+    {"path": "packages/types"},
+  ],
+  "include": ["packages/**/*"],
+  "exclude": ["**/node_modules/**"],
+  "typeRoots": ["./node_modules/@types"]
+}
