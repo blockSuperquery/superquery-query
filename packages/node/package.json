@@ -1,6 +1,6 @@
 {
   "name": "@subql/node-stellar",
-  "version": "3.0.1",
+  "version": "3.1.1-0",
   "description": "",
   "author": "Ian He",
   "license": "GPL-3.0",
@@ -10,7 +10,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nodemon",
-    "start:prod": "node dist/main"
+    "start:prod": "node dist/main",
+    "changelog:release": "echo \"Updating changelog $npm_package_version\" && npx chan release $npm_package_version --git-url \"https://github.com/subquery/subql-stellar\" --release-prefix=\"node-stellar/\""
   },
   "homepage": "https://github.com/subquery/subql-stellar",
   "repository": "github:subquery/subql-stellar",
@@ -24,9 +25,9 @@
     "@nestjs/event-emitter": "^2.0.0",
     "@nestjs/platform-express": "^9.4.0",
     "@nestjs/schedule": "^3.0.1",
-    "@subql/common": "^3.1.1",
+    "@subql/common": "^3.3.0",
     "@subql/common-stellar": "workspace:*",
-    "@subql/node-core": "^5.0.3",
+    "@subql/node-core": "^6.2.0",
     "@subql/testing": "^2.0.0",
     "@subql/types": "^2.2.1-1",
     "@subql/types-stellar": "workspace:*",
@@ -64,5 +65,6 @@
   "files": [
     "/dist",
     "/bin"
-  ]
+  ],
+  "stableVersion": "3.1.0"
 }

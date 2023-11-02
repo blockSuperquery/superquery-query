@@ -8,6 +8,7 @@ import {
   IndexingBenchmarkService,
   StoreService,
   PoiService,
+  PoiSyncService,
   ApiService,
   ConnectionPoolService,
   SmartBatchService,
@@ -16,6 +17,7 @@ import {
   NodeConfig,
   IProjectUpgradeService,
   ProjectUpgradeSevice,
+  InMemoryCacheService,
 } from '@subql/node-core';
 import { SubqueryProject } from '../configure/SubqueryProject';
 import { StellarApiConnection } from '../stellar/api.connection';
@@ -35,6 +37,7 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
 
 @Module({
   providers: [
+    InMemoryCacheService,
     StoreService,
     StoreCacheService,
     {
@@ -81,9 +84,11 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
         apiService: ApiService,
         indexerManager: IndexerManager,
         smartBatchService: SmartBatchService,
+        cacheService: InMemoryCacheService,
         storeService: StoreService,
         storeCacheService: StoreCacheService,
         poiService: PoiService,
+        poiSyncService: PoiSyncService,
         project: SubqueryProject,
         dynamicDsService: DynamicDsService,
         unfinalizedBlocks: UnfinalizedBlocksService,
@@ -96,9 +101,11 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
               projectService,
               projectUpgradeService,
               smartBatchService,
+              cacheService,
               storeService,
               storeCacheService,
               poiService,
+              poiSyncService,
               project,
               dynamicDsService,
               unfinalizedBlocks,
@@ -115,6 +122,7 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
               storeService,
               storeCacheService,
               poiService,
+              poiSyncService,
               project,
               dynamicDsService,
             ),
@@ -126,9 +134,11 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
         ApiService,
         IndexerManager,
         SmartBatchService,
+        InMemoryCacheService,
         StoreService,
         StoreCacheService,
         PoiService,
+        PoiSyncService,
         'ISubqueryProject',
         DynamicDsService,
         UnfinalizedBlocksService,
@@ -143,6 +153,7 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
     DsProcessorService,
     DynamicDsService,
     PoiService,
+    PoiSyncService,
     {
       useClass: ProjectService,
       provide: 'IProjectService',

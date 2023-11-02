@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2023-11-01
+### Added
+- Update `@subql/common` and relevant changes to support endBlock feature (#27)
+
+## [3.0.1] - 2023-10-13
+### Changed
+- Version bump with `@subql/common` 3.1.2
+
 ## [3.0.0] - 2023-10-05
 ### Added
 - Parent field to manifest for project upgrades (#18)
@@ -18,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - rename `soroban` to `sorobanEndpoint` in network config (#16)
 
 ## [2.3.0] - 2023-09-12
-[Unreleased]: https://github.com/subquery/subql-stellar/compare/common-stellar/3.0.0...HEAD
+[Unreleased]: https://github.com/subquery/subql-stellar/compare/common-stellar/3.1.0...HEAD
+[3.1.0]: https://github.com/subquery/subql-stellar/compare/common-stellar/3.0.1...common-stellar/3.1.0
+[3.0.1]: https://github.com/subquery/subql-stellar/compare/common-stellar/3.0.0...common-stellar/3.0.1
 [3.0.0]: https://github.com/subquery/subql-stellar/compare/common-stellar/2.3.1...common-stellar/3.0.0
 [2.3.1]: https://github.com/subquery/subql-stellar/compare/common-stellar/2.3.0...common-stellar/2.3.1
 [2.3.0]: https://github.com/subquery/subql-stellar/tag/v2.3.0
