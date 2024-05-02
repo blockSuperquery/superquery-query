@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { threadId } from 'node:worker_threads';
@@ -12,9 +12,9 @@ import {
   ApiService,
   BaseWorkerService,
   IProjectUpgradeService,
+  IBlock,
 } from '@subql/node-core';
-import { BlockWrapper } from '@subql/types-stellar';
-import { StellarProjectDs } from '../../configure/SubqueryProject';
+import { BlockWrapper, SubqlDatasource } from '@subql/types-stellar';
 import { IndexerManager } from '../indexer.manager';
 
 export type FetchBlockResponse = { parentHash: string } | undefined;
@@ -39,7 +39,7 @@ export class WorkerService extends BaseWorkerService<
     private apiService: ApiService,
     private indexerManager: IndexerManager,
     @Inject('IProjectService')
-    projectService: IProjectService<StellarProjectDs>,
+    projectService: IProjectService<SubqlDatasource>,
     @Inject('IProjectUpgradeService')
     projectUpgradeService: IProjectUpgradeService,
     nodeConfig: NodeConfig,
@@ -49,7 +49,7 @@ export class WorkerService extends BaseWorkerService<
   protected async fetchChainBlock(
     heights: number,
     extra: {},
-  ): Promise<BlockWrapper> {
+  ): Promise<IBlock<BlockWrapper>> {
     const [block] = await this.apiService.fetchBlocks([heights]);
     return block;
   }
@@ -61,7 +61,7 @@ export class WorkerService extends BaseWorkerService<
   }
 
   protected async processFetchedBlock(
-    block: BlockWrapper,
+    block: IBlock<BlockWrapper>,
     dataSources: SubqlStellarDataSource[],
   ): Promise<ProcessBlockResponse> {
     return this.indexerManager.indexBlock(block, dataSources);

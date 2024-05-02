@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -11,41 +11,32 @@ import {
   DatasourceParams,
   DynamicDsService as BaseDynamicDsService,
 } from '@subql/node-core';
+import { SubqlDatasource } from '@subql/types-stellar';
 import { plainToClass } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { cloneDeep } from 'lodash';
-import {
-  StellarProjectDs,
-  SubqueryProject,
-} from '../configure/SubqueryProject';
+import { SubqueryProject } from '../configure/SubqueryProject';
 import { DsProcessorService } from './ds-processor.service';
 
 @Injectable()
-export class DynamicDsService extends BaseDynamicDsService<StellarProjectDs> {
+export class DynamicDsService extends BaseDynamicDsService<
+  SubqlDatasource,
+  SubqueryProject
+> {
   constructor(
     private readonly dsProcessorService: DsProcessorService,
-    @Inject('ISubqueryProject') private readonly project: SubqueryProject,
+    @Inject('ISubqueryProject') project: SubqueryProject,
   ) {
-    super();
+    super(project);
   }
 
   protected async getDatasource(
     params: DatasourceParams,
-  ): Promise<StellarProjectDs> {
-    const { name, ...template } = cloneDeep(
-      this.project.templates.find((t) => t.name === params.templateName),
+  ): Promise<SubqlDatasource> {
+    const dsObj = this.getTemplate<SubqlDatasource>(
+      params.templateName,
+      params.startBlock,
     );
 
-    if (!template) {
-      throw new Error(
-        `Unable to find matching template in project for name: "${params.templateName}"`,
-      );
-    }
-
-    const dsObj = {
-      ...template,
-      startBlock: params.startBlock,
-    } as StellarProjectDs;
     try {
       if (isCustomDs(dsObj)) {
         dsObj.processor.options = {

@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { isMainThread } from 'worker_threads';
@@ -10,9 +10,11 @@ import {
   WorkerDynamicDsService,
   ConnectionPoolStateManager,
   WorkerConnectionPoolStateManager,
-  ProjectUpgradeSevice,
+  ProjectUpgradeService,
   InMemoryCacheService,
   WorkerInMemoryCacheService,
+  SandboxService,
+  WorkerUnfinalizedBlocksService,
 } from '@subql/node-core';
 import { SubqueryProject } from '../../configure/SubqueryProject';
 import { StellarApiService } from '../../stellar';
@@ -21,10 +23,8 @@ import { DsProcessorService } from '../ds-processor.service';
 import { DynamicDsService } from '../dynamic-ds.service';
 import { IndexerManager } from '../indexer.manager';
 import { ProjectService } from '../project.service';
-import { SandboxService } from '../sandbox.service';
 import { UnfinalizedBlocksService } from '../unfinalizedBlocks.service';
 import { WorkerService } from './worker.service';
-import { WorkerUnfinalizedBlocksService } from './worker.unfinalizedBlocks.service';
 
 @Module({
   providers: [
@@ -43,7 +43,7 @@ import { WorkerUnfinalizedBlocksService } from './worker.unfinalizedBlocks.servi
       provide: ApiService,
       useFactory: async (
         project: SubqueryProject,
-        projectUpgradeService: ProjectUpgradeSevice,
+        projectUpgradeService: ProjectUpgradeService,
         connectionPoolService: ConnectionPoolService<StellarApiConnection>,
         eventEmitter: EventEmitter2,
       ) => {

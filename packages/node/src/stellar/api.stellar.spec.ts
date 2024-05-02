@@ -1,7 +1,7 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
-import { EventEmitter2 } from 'eventemitter2';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { StellarApi } from './api.stellar';
 import { SorobanServer } from './soroban.server';
 
@@ -45,7 +45,7 @@ describe('StellarApi', () => {
   it('should fetch block', async () => {
     const latestHeight = await stellarApi.getFinalizedBlockHeight();
     const block = (await stellarApi.fetchBlocks([latestHeight]))[0];
-    expect(block.block.sequence).toEqual(latestHeight);
+    expect(block.getHeader().blockHeight).toEqual(latestHeight);
   });
 
   it('should throw on calling connect', async () => {
@@ -83,5 +83,18 @@ describe('StellarApi', () => {
   it('should get spec name', () => {
     const specName = stellarApi.getSpecName();
     expect(specName).toEqual('Stellar');
+  });
+
+  it('handleError - soroban node been reset', async () => {
+    const error = new Error('start is after newest ledger');
+    stellarApi.getAndWrapEvents = jest.fn(() => {
+      throw new Error('start is after newest ledger');
+    });
+    (stellarApi as any).fetchOperationsForLedger = jest.fn((seq: number) => [
+      { type: { toString: () => 'invoke_host_function' } },
+    ]);
+    await expect((stellarApi as any).fetchAndWrapLedger(100)).rejects.toThrow(
+      /Not Found/,
+    );
   });
 });

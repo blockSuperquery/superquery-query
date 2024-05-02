@@ -1,9 +1,9 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
-import {SorobanRpc} from 'soroban-client';
-import {Horizon, ServerApi} from 'stellar-sdk';
-import {BaseEffectRecord} from 'stellar-sdk/lib/types/effects';
+import {SorobanRpc, Contract, xdr} from 'stellar-sdk';
+import {HorizonApi, ServerApi} from 'stellar-sdk/lib/horizon';
+import {BaseEffectRecord} from 'stellar-sdk/lib/horizon/types/effects';
 import {BlockWrapper} from '../interfaces';
 
 export type StellarBlock = Omit<ServerApi.LedgerRecord, 'effects' | 'operations' | 'self' | 'transactions'> & {
@@ -23,7 +23,7 @@ export type StellarTransaction = Omit<
   events: SorobanEvent[];
 };
 
-export type StellarOperation<T extends Horizon.BaseOperationResponse = ServerApi.OperationRecord> = Omit<
+export type StellarOperation<T extends HorizonApi.BaseOperationResponse = ServerApi.OperationRecord> = Omit<
   T,
   'self' | 'succeeds' | 'precedes' | 'effects' | 'transaction'
 > & {
@@ -38,8 +38,23 @@ export type StellarEffect<T extends BaseEffectRecord = ServerApi.EffectRecord> =
   transaction: StellarTransaction;
   ledger: StellarBlock;
 };
+// COPIED FROM SOROBAN, due to no longer export
+export interface SorobanRpcEventResponse extends SorobanRpcBaseEventResponse {
+  contractId?: Contract;
+  topic: xdr.ScVal[];
+  value: xdr.ScVal;
+}
 
-export type SorobanEvent = Omit<SorobanRpc.EventResponse, 'ledger'> & {
+interface SorobanRpcBaseEventResponse {
+  id: string;
+  type: SorobanRpc.Api.EventType;
+  ledger: number;
+  ledgerClosedAt: string;
+  pagingToken: string;
+  inSuccessfulContractCall: boolean;
+}
+
+export type SorobanEvent = Omit<SorobanRpcEventResponse, 'ledger'> & {
   value: {
     xdr: string;
     decoded?: string;
@@ -59,7 +74,7 @@ export interface StellarTransactionFilter {
 }
 
 export interface StellarOperationFilter {
-  type?: Horizon.OperationResponseType;
+  type?: HorizonApi.OperationResponseType;
   sourceAccount?: string;
 }
 

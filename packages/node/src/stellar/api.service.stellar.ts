@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -10,14 +10,12 @@ import {
 import {
   ApiService,
   ConnectionPoolService,
-  NetworkMetadataPayload,
   getLogger,
-  IndexerEvent,
-  ProjectUpgradeSevice,
+  ProjectUpgradeService,
+  IBlock,
 } from '@subql/node-core';
-import { StellarBlockWrapper } from '@subql/types-stellar';
+import { StellarBlockWrapper, SubqlDatasource } from '@subql/types-stellar';
 import {
-  StellarProjectDs,
   SubqueryProject,
   dsHasSorobanEventHandler,
 } from '../configure/SubqueryProject';
@@ -28,18 +26,16 @@ import { SorobanServer } from './soroban.server';
 
 const logger = getLogger('api');
 
-const MAX_RECONNECT_ATTEMPTS = 5;
-
 @Injectable()
 export class StellarApiService extends ApiService<
   StellarApi,
   SafeStellarProvider,
-  StellarBlockWrapper[]
+  IBlock<StellarBlockWrapper>[]
 > {
   constructor(
     @Inject('ISubqueryProject') private project: SubqueryProject,
     @Inject('IProjectUpgradeService')
-    private projectUpgradeService: ProjectUpgradeSevice,
+    private projectUpgradeService: ProjectUpgradeService,
     connectionPoolService: ConnectionPoolService<StellarApiConnection>,
     eventEmitter: EventEmitter2,
   ) {
@@ -70,7 +66,7 @@ export class StellarApiService extends ApiService<
     if (
       dsHasSorobanEventHandler([
         ...this.project.dataSources,
-        ...(this.project.templates as StellarProjectDs[]),
+        ...(this.project.templates as SubqlDatasource[]),
       ]) &&
       !sorobanEndpoint
     ) {
@@ -83,20 +79,13 @@ export class StellarApiService extends ApiService<
       ? new SorobanServer(sorobanEndpoint)
       : undefined;
 
-    await this.createConnections(
-      network,
-      (endpoint) =>
-        StellarApiConnection.create(
-          endpoint,
-          this.fetchBlockBatches,
-          this.eventEmitter,
-          sorobanClient,
-        ),
-      //eslint-disable-next-line @typescript-eslint/require-await
-      async (connection: StellarApiConnection) => {
-        const api = connection.unsafeApi;
-        return api.getChainId();
-      },
+    await this.createConnections(network, (endpoint) =>
+      StellarApiConnection.create(
+        endpoint,
+        this.fetchBlockBatches,
+        this.eventEmitter,
+        sorobanClient,
+      ),
     );
 
     return this;
@@ -147,7 +136,7 @@ export class StellarApiService extends ApiService<
   private async fetchBlockBatches(
     api: StellarApi,
     batch: number[],
-  ): Promise<StellarBlockWrapper[]> {
+  ): Promise<IBlock<StellarBlockWrapper>[]> {
     return api.fetchBlocks(batch);
   }
 }

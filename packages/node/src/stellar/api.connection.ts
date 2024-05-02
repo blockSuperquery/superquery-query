@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -11,6 +11,7 @@ import {
   RateLimitError,
   DisconnectionError,
   LargeResponseError,
+  IBlock,
 } from '@subql/node-core';
 import { StellarBlockWrapper } from '@subql/types-stellar';
 import { StellarApi } from './api.stellar';
@@ -20,14 +21,14 @@ import { SorobanServer } from './soroban.server';
 type FetchFunc = (
   api: StellarApi,
   batch: number[],
-) => Promise<StellarBlockWrapper[]>;
+) => Promise<IBlock<StellarBlockWrapper>[]>;
 
 export class StellarApiConnection
   implements
     IApiConnectionSpecific<
       StellarApi,
       SafeStellarProvider,
-      StellarBlockWrapper[]
+      IBlock<StellarBlockWrapper>[]
     >
 {
   readonly networkMeta: NetworkMetadataPayload;
@@ -69,7 +70,7 @@ export class StellarApiConnection
     await this.unsafeApi.disconnect();
   }
 
-  async fetchBlocks(heights: number[]): Promise<StellarBlockWrapper[]> {
+  async fetchBlocks(heights: number[]): Promise<IBlock<StellarBlockWrapper>[]> {
     const blocks = await this.fetchBlocksBatches(this.unsafeApi, heights);
     return blocks;
   }

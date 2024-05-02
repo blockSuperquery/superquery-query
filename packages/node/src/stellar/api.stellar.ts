@@ -1,8 +1,8 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { getLogger } from '@subql/node-core';
+import { getLogger, IBlock } from '@subql/node-core';
 import {
   ApiWrapper,
   SorobanEvent,
@@ -13,23 +13,23 @@ import {
   StellarTransaction,
 } from '@subql/types-stellar';
 import { cloneDeep } from 'lodash';
-import { Server, ServerApi } from 'stellar-sdk';
+import { Server, ServerApi } from 'stellar-sdk/lib/horizon';
 import { StellarBlockWrapped } from '../stellar/block.stellar';
 import SafeStellarProvider from './safe-api';
 import { SorobanServer } from './soroban.server';
 import { StellarServer } from './stellar.server';
+import { formatBlockUtil } from './utils.stellar';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version: packageVersion } = require('../../package.json');
 
 const logger = getLogger('api.Stellar');
 
-export class StellarApi implements ApiWrapper<StellarBlockWrapper> {
+export class StellarApi implements ApiWrapper {
   //private client: Server;
   private stellarClient: StellarServer;
 
   private chainId: string;
-  private genesisHash: string;
   private name: string;
 
   constructor(
@@ -240,7 +240,9 @@ export class StellarApi implements ApiWrapper<StellarBlockWrapper> {
 
       const clonedTx = cloneDeep(wrappedTx);
       const operations = this.wrapOperationsForTx(
-        tx.id,
+        // TODO, this include other attribute from HorizonApi.TransactionResponse, but type assertion incorrect
+        // TransactionRecord extends Omit<HorizonApi.TransactionResponse, "created_at">
+        (tx as any).id,
         index + 1,
         sequence,
         operationsForSequence,
@@ -271,7 +273,7 @@ export class StellarApi implements ApiWrapper<StellarBlockWrapper> {
 
   private async fetchAndWrapLedger(
     sequence: number,
-  ): Promise<StellarBlockWrapper> {
+  ): Promise<IBlock<StellarBlockWrapper>> {
     const [ledger, transactions, operations, effects] = await Promise.all([
       this.api.ledgers().ledger(sequence).call(),
       this.fetchTransactionsForLedger(sequence),
@@ -291,9 +293,17 @@ export class StellarApi implements ApiWrapper<StellarBlockWrapper> {
       try {
         eventsForSequence = await this.getAndWrapEvents(sequence);
       } catch (e) {
+        if (e.message === 'start is after newest ledger') {
+          const latestLedger = (await this.sorobanClient.getLatestLedger())
+            .sequence;
+          throw new Error(`The requested events for ledger number ${sequence} is not available on the current soroban node.
+                This is because you're trying to access a ledger that is after the latest ledger number ${latestLedger} stored in this node.
+                To resolve this issue, please check you endpoint node start height`);
+        }
+
         if (e.message === 'start is before oldest ledger') {
-          throw new Error(`The requested events for ledger number ${sequence} is not available on the current soroban node. 
-                This is because you're trying to access a ledger that is older than the oldest ledger stored in this node. 
+          throw new Error(`The requested events for ledger number ${sequence} is not available on the current soroban node.
+                This is because you're trying to access a ledger that is older than the oldest ledger stored in this node.
                 To resolve this issue, you can either:
                 1. Increase the start ledger to a more recent one, or
                 2. Connect to a different node that might have a longer history of ledgers.`);
@@ -352,10 +362,12 @@ export class StellarApi implements ApiWrapper<StellarBlockWrapper> {
       wrappedLedger.events,
     );
 
-    return wrappedLedgerInstance;
+    return formatBlockUtil(wrappedLedgerInstance);
   }
 
-  async fetchBlocks(bufferBlocks: number[]): Promise<StellarBlockWrapper[]> {
+  async fetchBlocks(
+    bufferBlocks: number[],
+  ): Promise<IBlock<StellarBlockWrapper>[]> {
     const ledgers = await Promise.all(
       bufferBlocks.map((sequence) => this.fetchAndWrapLedger(sequence)),
     );
@@ -385,8 +397,8 @@ export class StellarApi implements ApiWrapper<StellarBlockWrapper> {
 
   handleError(e: Error, height: number): Error {
     if (e.message === 'start is before oldest ledger') {
-      return new Error(`The requested ledger number ${height} is not available on the current blockchain node. 
-      This is because you're trying to access a ledger that is older than the oldest ledger stored in this node. 
+      return new Error(`The requested ledger number ${height} is not available on the current blockchain node.
+      This is because you're trying to access a ledger that is older than the oldest ledger stored in this node.
       To resolve this issue, you can either:
       1. Increase the start ledger to a more recent one, or
       2. Connect to a different node that might have a longer history of ledgers.`);

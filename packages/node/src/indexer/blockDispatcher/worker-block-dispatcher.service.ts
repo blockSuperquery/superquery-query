@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import path from 'path';
@@ -7,9 +7,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   getLogger,
   NodeConfig,
-  SmartBatchService,
   StoreService,
-  PoiService,
   PoiSyncService,
   StoreCacheService,
   IProjectService,
@@ -19,10 +17,8 @@ import {
   createIndexerWorker,
   InMemoryCacheService,
 } from '@subql/node-core';
-import {
-  StellarProjectDs,
-  SubqueryProject,
-} from '../../configure/SubqueryProject';
+import { StellarBlockWrapper, SubqlDatasource } from '@subql/types-stellar';
+import { SubqueryProject } from '../../configure/SubqueryProject';
 import { StellarApiConnection } from '../../stellar/api.connection';
 import { StellarBlockWrapped } from '../../stellar/block.stellar';
 import { DynamicDsService } from '../dynamic-ds.service';
@@ -37,21 +33,23 @@ type IndexerWorker = IIndexerWorker & {
 
 @Injectable()
 export class WorkerBlockDispatcherService
-  extends WorkerBlockDispatcher<StellarProjectDs, IndexerWorker>
+  extends WorkerBlockDispatcher<
+    SubqlDatasource,
+    IndexerWorker,
+    StellarBlockWrapper
+  >
   implements OnApplicationShutdown
 {
   constructor(
     nodeConfig: NodeConfig,
     eventEmitter: EventEmitter2,
     @Inject('IProjectService')
-    projectService: IProjectService<StellarProjectDs>,
+    projectService: IProjectService<SubqlDatasource>,
     @Inject('IProjectUpgradeService')
     projectUpgradeService: IProjectUpgradeService,
-    smartBatchService: SmartBatchService,
     cacheService: InMemoryCacheService,
     storeService: StoreService,
     storeCacheService: StoreCacheService,
-    poiService: PoiService,
     poiSyncService: PoiSyncService,
     @Inject('ISubqueryProject') project: SubqueryProject,
     dynamicDsService: DynamicDsService,
@@ -63,19 +61,16 @@ export class WorkerBlockDispatcherService
       eventEmitter,
       projectService,
       projectUpgradeService,
-      smartBatchService,
       storeService,
       storeCacheService,
-      poiService,
       poiSyncService,
       project,
-      dynamicDsService,
       () =>
         createIndexerWorker<
           IIndexerWorker,
           StellarApiConnection,
           StellarBlockWrapped,
-          StellarProjectDs
+          SubqlDatasource
         >(
           path.resolve(__dirname, '../../../dist/indexer/worker/worker.js'),
           [],

@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { isMainThread } from 'worker_threads';
@@ -12,16 +12,12 @@ import {
   NodeConfig,
   ApiService,
   IProjectUpgradeService,
-  mainThreadOnly,
+  profiler,
 } from '@subql/node-core';
-import { StellarBlockWrapper } from '@subql/types-stellar';
+import { StellarBlockWrapper, SubqlDatasource } from '@subql/types-stellar';
 import { Sequelize } from '@subql/x-sequelize';
-import { ServerApi } from 'stellar-sdk';
-import {
-  //  generateTimestampReferenceForBlockFilters,
-  StellarProjectDs,
-  SubqueryProject,
-} from '../configure/SubqueryProject';
+import { ServerApi } from 'stellar-sdk/lib/horizon';
+import { SubqueryProject } from '../configure/SubqueryProject';
 import { StellarApi } from '../stellar';
 import SafeStellarProvider from '../stellar/safe-api';
 import { DsProcessorService } from './ds-processor.service';
@@ -34,7 +30,7 @@ const { version: packageVersion } = require('../../package.json');
 @Injectable()
 export class ProjectService extends BaseProjectService<
   ApiService<StellarApi, SafeStellarProvider, StellarBlockWrapper[]>,
-  StellarProjectDs
+  SubqlDatasource
 > {
   protected packageVersion = packageVersion;
 
@@ -47,7 +43,7 @@ export class ProjectService extends BaseProjectService<
     @Inject(isMainThread ? Sequelize : 'Null') sequelize: Sequelize,
     @Inject('ISubqueryProject') project: SubqueryProject,
     @Inject('IProjectUpgradeService')
-    protected readonly projectUpgradeService: IProjectUpgradeService<SubqueryProject>,
+    projectUpgradeService: IProjectUpgradeService<SubqueryProject>,
     @Inject(isMainThread ? StoreService : 'Null') storeService: StoreService,
     nodeConfig: NodeConfig,
     dynamicDsService: DynamicDsService,
@@ -68,6 +64,11 @@ export class ProjectService extends BaseProjectService<
       eventEmitter,
       unfinalizedBlockService,
     );
+  }
+
+  @profiler()
+  async init(startHeight?: number): Promise<void> {
+    return super.init(startHeight);
   }
 
   protected async getBlockTimestamp(height: number): Promise<Date> {

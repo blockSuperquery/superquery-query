@@ -1,14 +1,7 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
-import {
-  StellarBlock,
-  StellarBlockWrapper,
-  StellarEffect,
-  SorobanEvent,
-  StellarOperation,
-  StellarTransaction,
-} from './stellar';
+import {StellarBlock, StellarEffect, SorobanEvent, StellarOperation, StellarTransaction} from './stellar';
 
 export interface BlockWrapper<
   B extends StellarBlock = StellarBlock,
@@ -24,7 +17,7 @@ export interface BlockWrapper<
   events?: E[];
 }
 
-export interface ApiWrapper<BW extends BlockWrapper = StellarBlockWrapper> {
+export interface ApiWrapper {
   init: () => Promise<void>;
   getGenesisHash: () => string;
   getRuntimeChain: () => string;
@@ -33,7 +26,6 @@ export interface ApiWrapper<BW extends BlockWrapper = StellarBlockWrapper> {
   getFinalizedBlockHeight: () => Promise<number>;
   getBestBlockHeight: () => Promise<number>;
   //getBlockByHeightOrHash: (hashOrHeight: number | string) => Promise<Block>;
-  fetchBlocks: (bufferBlocks: number[]) => Promise<BW[]>;
 }
 
 export type DynamicDatasourceCreator = (name: string, args: Record<string, unknown>) => Promise<void>;

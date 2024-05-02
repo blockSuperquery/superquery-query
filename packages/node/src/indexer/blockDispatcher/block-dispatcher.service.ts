@@ -1,27 +1,22 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { Inject, Injectable, OnApplicationShutdown } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   NodeConfig,
-  SmartBatchService,
   StoreCacheService,
   StoreService,
   IProjectService,
-  PoiService,
   BlockDispatcher,
   ProcessBlockResponse,
   ApiService,
   IProjectUpgradeService,
   PoiSyncService,
+  IBlock,
 } from '@subql/node-core';
-import { StellarBlockWrapper } from '@subql/types-stellar';
-import {
-  StellarProjectDs,
-  SubqueryProject,
-} from '../../configure/SubqueryProject';
-import { DynamicDsService } from '../dynamic-ds.service';
+import { StellarBlockWrapper, SubqlDatasource } from '@subql/types-stellar';
+import { SubqueryProject } from '../../configure/SubqueryProject';
 import { IndexerManager } from '../indexer.manager';
 
 /**
@@ -29,7 +24,7 @@ import { IndexerManager } from '../indexer.manager';
  */
 @Injectable()
 export class BlockDispatcherService
-  extends BlockDispatcher<StellarBlockWrapper, StellarProjectDs>
+  extends BlockDispatcher<StellarBlockWrapper, SubqlDatasource>
   implements OnApplicationShutdown
 {
   constructor(
@@ -38,29 +33,23 @@ export class BlockDispatcherService
     private indexerManager: IndexerManager,
     eventEmitter: EventEmitter2,
     @Inject('IProjectService')
-    projectService: IProjectService<StellarProjectDs>,
+    projectService: IProjectService<SubqlDatasource>,
     @Inject('IProjectUpgradeService')
     projectUpgradeService: IProjectUpgradeService,
-    smartBatchService: SmartBatchService,
     storeService: StoreService,
     storeCacheService: StoreCacheService,
-    poiService: PoiService,
     poiSyncService: PoiSyncService,
     @Inject('ISubqueryProject') project: SubqueryProject,
-    dynamicDsService: DynamicDsService,
   ) {
     super(
       nodeConfig,
       eventEmitter,
       projectService,
       projectUpgradeService,
-      smartBatchService,
       storeService,
       storeCacheService,
-      poiService,
       poiSyncService,
       project,
-      dynamicDsService,
       apiService.fetchBlocks.bind(apiService),
     );
   }
@@ -70,11 +59,11 @@ export class BlockDispatcherService
   }
 
   protected async indexBlock(
-    block: StellarBlockWrapper,
+    block: IBlock<StellarBlockWrapper>,
   ): Promise<ProcessBlockResponse> {
     return this.indexerManager.indexBlock(
       block,
-      await this.projectService.getDataSources(this.getBlockHeight(block)),
+      await this.projectService.getDataSources(block.getHeader().blockHeight),
     );
   }
 }

@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { Module } from '@nestjs/common';
@@ -11,13 +11,13 @@ import {
   PoiSyncService,
   ApiService,
   ConnectionPoolService,
-  SmartBatchService,
   StoreCacheService,
   ConnectionPoolStateManager,
   NodeConfig,
   IProjectUpgradeService,
-  ProjectUpgradeSevice,
+  ProjectUpgradeService,
   InMemoryCacheService,
+  SandboxService,
 } from '@subql/node-core';
 import { SubqueryProject } from '../configure/SubqueryProject';
 import { StellarApiConnection } from '../stellar/api.connection';
@@ -26,13 +26,12 @@ import {
   BlockDispatcherService,
   WorkerBlockDispatcherService,
 } from './blockDispatcher';
-import { DictionaryService } from './dictionary.service';
+import { StellarDictionaryService } from './dictionary';
 import { DsProcessorService } from './ds-processor.service';
 import { DynamicDsService } from './dynamic-ds.service';
 import { FetchService } from './fetch.service';
 import { IndexerManager } from './indexer.manager';
 import { ProjectService } from './project.service';
-import { SandboxService } from './sandbox.service';
 import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
 
 @Module({
@@ -44,7 +43,7 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
       provide: ApiService,
       useFactory: async (
         project: SubqueryProject,
-        projectUpgradeService: ProjectUpgradeSevice,
+        projectUpgradeService: ProjectUpgradeService,
         connectionPoolService: ConnectionPoolService<StellarApiConnection>,
         eventEmitter: EventEmitter2,
       ) => {
@@ -68,13 +67,6 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
     ConnectionPoolService,
     ConnectionPoolStateManager,
     {
-      provide: SmartBatchService,
-      useFactory: (nodeConfig: NodeConfig) => {
-        return new SmartBatchService(nodeConfig.batchSize);
-      },
-      inject: [NodeConfig],
-    },
-    {
       provide: 'IBlockDispatcher',
       useFactory: (
         nodeConfig: NodeConfig,
@@ -83,28 +75,24 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
         projectUpgradeService: IProjectUpgradeService,
         apiService: ApiService,
         indexerManager: IndexerManager,
-        smartBatchService: SmartBatchService,
         cacheService: InMemoryCacheService,
         storeService: StoreService,
         storeCacheService: StoreCacheService,
-        poiService: PoiService,
         poiSyncService: PoiSyncService,
         project: SubqueryProject,
         dynamicDsService: DynamicDsService,
         unfinalizedBlocks: UnfinalizedBlocksService,
         connectionPoolState: ConnectionPoolStateManager<StellarApiConnection>,
       ) =>
-        nodeConfig.workers !== undefined
+        nodeConfig.workers
           ? new WorkerBlockDispatcherService(
               nodeConfig,
               eventEmitter,
               projectService,
               projectUpgradeService,
-              smartBatchService,
               cacheService,
               storeService,
               storeCacheService,
-              poiService,
               poiSyncService,
               project,
               dynamicDsService,
@@ -118,13 +106,10 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
               eventEmitter,
               projectService,
               projectUpgradeService,
-              smartBatchService,
               storeService,
               storeCacheService,
-              poiService,
               poiSyncService,
               project,
-              dynamicDsService,
             ),
       inject: [
         NodeConfig,
@@ -133,11 +118,9 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
         'IProjectUpgradeService',
         ApiService,
         IndexerManager,
-        SmartBatchService,
         InMemoryCacheService,
         StoreService,
         StoreCacheService,
-        PoiService,
         PoiSyncService,
         'ISubqueryProject',
         DynamicDsService,
@@ -148,7 +131,7 @@ import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
     FetchService,
     IndexingBenchmarkService,
     PoiBenchmarkService,
-    DictionaryService,
+    StellarDictionaryService,
     SandboxService,
     DsProcessorService,
     DynamicDsService,

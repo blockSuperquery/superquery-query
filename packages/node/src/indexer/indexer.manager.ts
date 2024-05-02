@@ -1,4 +1,4 @@
-// Copyright 2020-2023 SubQuery Pte Ltd authors & contributors
+// Copyright 2020-2024 SubQuery Pte Ltd authors & contributors
 // SPDX-License-Identifier: GPL-3.0
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -24,6 +24,8 @@ import {
   ProcessBlockResponse,
   BaseIndexerManager,
   ApiService,
+  IBlock,
+  SandboxService,
 } from '@subql/node-core';
 import {
   StellarBlockWrapper,
@@ -39,25 +41,20 @@ import {
   SorobanEvent,
   SorobanEventFilter,
 } from '@subql/types-stellar';
-import { StellarProjectDs } from '../configure/SubqueryProject';
 import { StellarApi } from '../stellar';
 import { StellarBlockWrapped } from '../stellar/block.stellar';
 import SafeStellarProvider from '../stellar/safe-api';
-import {
-  asSecondLayerHandlerProcessor_1_0_0,
-  DsProcessorService,
-} from './ds-processor.service';
+import { DsProcessorService } from './ds-processor.service';
 import { DynamicDsService } from './dynamic-ds.service';
 import { ProjectService } from './project.service';
-import { SandboxService } from './sandbox.service';
 import { UnfinalizedBlocksService } from './unfinalizedBlocks.service';
 
 const logger = getLogger('indexer');
 
 @Injectable()
 export class IndexerManager extends BaseIndexerManager<
-  SafeStellarProvider,
   StellarApi,
+  SafeStellarProvider,
   StellarBlockWrapper,
   ApiService,
   SubqlStellarDataSource,
@@ -68,12 +65,11 @@ export class IndexerManager extends BaseIndexerManager<
 > {
   protected isRuntimeDs = isRuntimeDs;
   protected isCustomDs = isCustomDs;
-  protected updateCustomProcessor = asSecondLayerHandlerProcessor_1_0_0;
 
   constructor(
     apiService: ApiService,
     nodeConfig: NodeConfig,
-    sandboxService: SandboxService,
+    sandboxService: SandboxService<SafeStellarProvider, StellarApi>,
     dsProcessorService: DsProcessorService,
     dynamicDsService: DynamicDsService,
     unfinalizedBlocksService: UnfinalizedBlocksService,
@@ -98,34 +94,26 @@ export class IndexerManager extends BaseIndexerManager<
 
   @profiler()
   async indexBlock(
-    block: StellarBlockWrapper,
+    block: IBlock<StellarBlockWrapper>,
     dataSources: SubqlStellarDataSource[],
   ): Promise<ProcessBlockResponse> {
     return super.internalIndexBlock(block, dataSources, () =>
-      this.getApi(block),
+      this.getApi(block.block),
     );
-  }
-
-  getBlockHeight(block: StellarBlockWrapper): number {
-    return block.block.sequence;
-  }
-
-  getBlockHash(block: StellarBlockWrapper): string {
-    return block.block.hash;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   private async getApi(
     block: StellarBlockWrapper,
   ): Promise<SafeStellarProvider> {
-    // return this.apiService.safeApi(this.getBlockHeight(block));
+    // return this.apiService.safeApi(block.block.sequence);
     return null;
   }
 
   protected async indexBlockData(
     { block, effects, operations, transactions }: StellarBlockWrapper,
-    dataSources: StellarProjectDs[],
-    getVM: (d: StellarProjectDs) => Promise<IndexerSandbox>,
+    dataSources: SubqlDatasource[],
+    getVM: (d: SubqlDatasource) => Promise<IndexerSandbox>,
   ): Promise<void> {
     await this.indexBlockContent(block, dataSources, getVM);
 
@@ -138,7 +126,6 @@ export class IndexerManager extends BaseIndexerManager<
         for (const effect of operation.effects) {
           await this.indexEffect(effect, dataSources, getVM);
         }
-
         for (const event of operation.events) {
           await this.indexEvent(event, dataSources, getVM);
         }
@@ -148,8 +135,8 @@ export class IndexerManager extends BaseIndexerManager<
 
   private async indexBlockContent(
     block: StellarBlock,
-    dataSources: StellarProjectDs[],
-    getVM: (d: StellarProjectDs) => Promise<IndexerSandbox>,
+    dataSources: SubqlDatasource[],
+    getVM: (d: SubqlDatasource) => Promise<IndexerSandbox>,
   ): Promise<void> {
     for (const ds of dataSources) {
       await this.indexData(StellarHandlerKind.Block, block, ds, getVM);
@@ -158,8 +145,8 @@ export class IndexerManager extends BaseIndexerManager<
 
   private async indexTransaction(
     transaction: StellarTransaction,
-    dataSources: StellarProjectDs[],
-    getVM: (d: StellarProjectDs) => Promise<IndexerSandbox>,
+    dataSources: SubqlDatasource[],
+    getVM: (d: SubqlDatasource) => Promise<IndexerSandbox>,
   ): Promise<void> {
     for (const ds of dataSources) {
       await this.indexData(
@@ -186,8 +173,8 @@ export class IndexerManager extends BaseIndexerManager<
 
   private async indexOperation(
     operation: StellarOperation,
-    dataSources: StellarProjectDs[],
-    getVM: (d: StellarProjectDs) => Promise<IndexerSandbox>,
+    dataSources: SubqlDatasource[],
+    getVM: (d: SubqlDatasource) => Promise<IndexerSandbox>,
   ): Promise<void> {
     for (const ds of dataSources) {
       await this.indexData(StellarHandlerKind.Operation, operation, ds, getVM);
@@ -196,8 +183,8 @@ export class IndexerManager extends BaseIndexerManager<
 
   private async indexEffect(
     effect: StellarEffect,
-    dataSources: StellarProjectDs[],
-    getVM: (d: StellarProjectDs) => Promise<IndexerSandbox>,
+    dataSources: SubqlDatasource[],
+    getVM: (d: SubqlDatasource) => Promise<IndexerSandbox>,
   ): Promise<void> {
     for (const ds of dataSources) {
       await this.indexData(StellarHandlerKind.Effects, effect, ds, getVM);
@@ -206,8 +193,8 @@ export class IndexerManager extends BaseIndexerManager<
 
   private async indexEvent(
     event: SorobanEvent,
-    dataSources: StellarProjectDs[],
-    getVM: (d: StellarProjectDs) => Promise<IndexerSandbox>,
+    dataSources: SubqlDatasource[],
+    getVM: (d: SubqlDatasource) => Promise<IndexerSandbox>,
   ): Promise<void> {
     for (const ds of dataSources) {
       await this.indexData(StellarHandlerKind.Event, event, ds, getVM);
