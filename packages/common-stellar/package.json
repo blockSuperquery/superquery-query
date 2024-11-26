@@ -1,6 +1,6 @@
 {
   "name": "@subql/common-stellar",
-  "version": "4.1.1-0",
+  "version": "4.1.4",
   "description": "",
   "scripts": {
     "build": "rm -rf dist && tsc -b",
@@ -15,7 +15,7 @@
   "license": "GPL-3.0",
   "dependencies": {
     "@stellar/stellar-sdk": "^12.2.0",
-    "@subql/common": "^5.1.3",
+    "@subql/common": "^5.2.1",
     "@subql/types-stellar": "workspace:*",
     "js-yaml": "^4.1.0",
     "pino": "^6.13.3",
@@ -28,6 +28,5 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.4",
     "@types/pino": "^6.3.12"
-  },
-  "stableVersion": "4.1.0"
+  }
 }
