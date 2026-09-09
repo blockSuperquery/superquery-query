@@ -1,0 +1,83 @@
+# SuperQuery Query — GraphQL read layer over node-indexed PostgreSQL.
+#
+# Role split across the three repos:
+#   superquery-sdk   → project authoring (manifest, schema.graphql, mappings)
+#   superquery-node  → indexes chain data, OWNS all writes to Postgres
+#   superquery-query → THIS REPO. Read-only. Serves a generated GraphQL API.
+#
+# The node is the source of truth for on-disk shape. Two contracts bind us to it
+# and must never drift (see crates/query-core/src/naming.rs for the parity tests):
+#
+#   1. Identifier naming — table = underscored(pluralize(Entity)),
+#      column = underscored(field). `Transfer` → `transfers`.
+#   2. Column types — the inverse of the node's ddl.rs type map.
+#      ID/String→text, Int→integer, BigInt→numeric, Float→double precision,
+#      Boolean→boolean, Bytes→bytea, Date→timestamp, arrays/Json→jsonb.
+#
+# Dependency edges:
+#   query-core → (nothing)      pure logic: schema IR, naming, filter/sort/cursor
+#   postgres   → query-core     pool, metadata, introspection, SQL compilation
+#   graphql    → query-core, postgres    dynamic schema + resolvers
+#   server     → all            axum wiring, health, transport
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/query-core",
+    "crates/postgres",
+    "crates/graphql",
+    "crates/server",
+    "bins/superquery-query",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "GPL-3.0"
+authors = ["SuperQuery authors & contributors"]
+repository = "https://github.com/blockSuperquery/superquery-query"
+
+[workspace.dependencies]
+# internal
+superquery-query-core = { path = "crates/query-core" }
+superquery-postgres = { path = "crates/postgres" }
+superquery-graphql = { path = "crates/graphql" }
+superquery-server = { path = "crates/server" }
+
+# async runtime + HTTP
+tokio = { version = "1.52", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "limit", "timeout"] }
+futures = "0.3"
+
+# GraphQL
+async-graphql = { version = "7", features = ["dynamic-schema", "dataloader"] }
+async-graphql-axum = "7"
+graphql-parser = "0.4"
+
+# Postgres — matches superquery-node's stack so store logic stays shareable.
+# (sqlx's compile-time query checking would buy nothing here: every statement we
+# issue is generated at runtime from the schema IR.)
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-chrono-0_4"] }
+deadpool-postgres = "0.14"
+
+# support
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+clap = { version = "4.6", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+regex = "1"
+base64 = "0.22"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = "thin"

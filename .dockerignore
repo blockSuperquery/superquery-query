@@ -1,7 +1,7 @@
+target
+**/target
+.git
 .github
-node_modules
-coverage
-deploy
-docs
-test/docker-compose.yaml
-test/Dockerfile
+.claude
+deploy/.data
+*.log

@@ -1,0 +1,23 @@
+[package]
+name = "superquery-graphql"
+description = "Dynamic GraphQL schema generation and resolvers over indexed entities"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+superquery-query-core.workspace = true
+superquery-postgres.workspace = true
+async-graphql.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+futures.workspace = true

@@ -1,0 +1,24 @@
+# Reference project schema — the ERC-20 transfer indexer from the
+# implementation guide's cross-repo integration test (§23).
+#
+# Used by the docs and as the fixture for integration tests. It deliberately
+# exercises every generation path: scalars, a nullable field, a list, a forward
+# foreign key, and a @derivedFrom reverse relation.
+
+type Transfer @entity {
+  id: ID!
+  from: String!
+  to: String!
+  value: BigInt!
+  blockNumber: Int!
+  timestamp: Date!
+  txHash: Bytes
+  tags: [String!]
+  fromAccount: Account!
+}
+
+type Account @entity {
+  id: ID!
+  balance: BigInt!
+  transfers: [Transfer!]! @derivedFrom(field: "fromAccount")
+}

@@ -1,3 +1,9 @@
+# Local stack: Postgres + node + query.
+#
+# The pairing that matters: the node's `--db-schema` and the query service's
+# `--name` must be the same value. That schema name IS the project identity —
+# there is no separate project id.
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -13,7 +19,9 @@ services:
       timeout: 5s
       retries: 5
 
-  subquery-node:
+  # The indexer owns every write. Swap this image for the Rust node once it
+  # ships; the query service reads the same schema either way.
+  superquery-node:
     image: subquerynetwork/subql-node-stellar:latest
     depends_on:
       postgres:
@@ -26,37 +34,47 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
     volumes:
-      # Point this at your SuperQuery project directory (manifest, schema, mappings)
+      # Your project directory: manifest, schema.graphql, mappings.
       - ../../your-project:/app
     command:
-      - ${SUB_COMMAND:-}
       - -f=/app
       - --db-schema=app
       - --workers=2
       - --batch-size=10
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://subquery-node:3000/ready']
+      test: ['CMD', 'curl', '-f', 'http://superquery-node:3000/ready']
       interval: 3s
       timeout: 5s
       retries: 10
 
-  graphql-engine:
-    image: subquerynetwork/subql-query:latest
+  superquery-query:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     ports:
       - 3000:3000
     depends_on:
       postgres:
         condition: service_healthy
-      subquery-node:
+      superquery-node:
+        # Wait for the node: the query service validates the project schema
+        # against the database at startup and exits if the tables are missing.
         condition: service_healthy
-    restart: always
+    restart: unless-stopped
     environment:
       DB_USER: postgres
       DB_PASS: postgres
       DB_DATABASE: postgres
       DB_HOST: postgres
       DB_PORT: 5432
+    volumes:
+      - ../../your-project:/project:ro
     command:
       - --name=app
+      - --schema=/project/schema.graphql
       - --playground
-      - --indexer=http://subquery-node:3000
+    healthcheck:
+      test: ['CMD', '/usr/local/bin/superquery-query', '--version']
+      interval: 10s
+      timeout: 5s
+      retries: 3
