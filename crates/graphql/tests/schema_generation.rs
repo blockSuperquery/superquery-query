@@ -124,6 +124,12 @@ fn pagination_arguments_are_present() {
 }
 
 #[test]
+fn connections_expose_total_count() {
+    let sdl = generated_sdl();
+    assert!(sdl.contains("totalCount: Int!"), "{sdl}");
+}
+
+#[test]
 fn meta_field_is_exposed() {
     let sdl = generated_sdl();
     assert!(sdl.contains("_meta: _Meta!"), "{sdl}");

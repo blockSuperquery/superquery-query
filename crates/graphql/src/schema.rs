@@ -31,7 +31,9 @@ use superquery_postgres::row::EntityRow;
 use superquery_postgres::{decode_row, sql};
 use superquery_query_core::pagination::PageDirection;
 use superquery_query_core::schema::{Entity, FieldKind};
-use superquery_query_core::{Cursor, Ordering, PageInfo, PageRequest, ScalarType, SchemaIr};
+use superquery_query_core::{
+    Cursor, FilterExpr, Ordering, PageInfo, PageRequest, ScalarType, SchemaIr,
+};
 
 use crate::context::QueryContext;
 use crate::limits::Limits;
@@ -43,6 +45,10 @@ struct ConnectionData {
     rows: Vec<EntityRow>,
     cursors: Vec<String>,
     page_info: PageInfo,
+    /// Kept so `totalCount` can count the same filtered set, and only when a
+    /// client actually selects it.
+    entity: String,
+    filter: Option<FilterExpr>,
 }
 
 /// Build the complete GraphQL schema for a project.
@@ -276,6 +282,7 @@ fn connection_object(entity: &Entity) -> Object {
                 })
             },
         ))
+        .field(total_count_field())
         .field(Field::new(
             "pageInfo",
             TypeRef::named_nn("PageInfo"),
@@ -286,6 +293,47 @@ fn connection_object(entity: &Entity) -> Object {
                 })
             },
         ))
+}
+
+/// `totalCount: Int!` — the size of the filtered set, ignoring the cursor.
+///
+/// A separate `count(*)`, issued only when the field is selected, so the
+/// common `nodes`-only query pays nothing for it. Typed `Int` for parity with
+/// SubQuery; a table past 2^31 rows gets an explicit error rather than a
+/// silently wrapped number.
+fn total_count_field() -> Field {
+    Field::new(
+        "totalCount",
+        TypeRef::named_nn(TypeRef::INT),
+        |ctx: ResolverContext| {
+            FieldFuture::new(async move {
+                let data = ctx.parent_value.try_downcast_ref::<ConnectionData>()?;
+                let qctx = ctx.data::<QueryContext>()?;
+                let entity = lookup_entity(&qctx.ir, &data.entity)?;
+
+                let query = sql::count_collection(&qctx.db_schema, entity, data.filter.as_ref())
+                    .map_err(to_gql)?;
+                let row = qctx
+                    .db
+                    .query_opt(&query.sql, &query.params_as_refs())
+                    .await
+                    .map_err(to_gql)?;
+
+                let count: i64 = match row {
+                    Some(r) => r.get::<_, String>(0).parse().map_err(to_gql)?,
+                    None => 0,
+                };
+                let count = i32::try_from(count).map_err(|_| {
+                    async_graphql::Error::new(format!(
+                        "totalCount is {count}, which does not fit in a GraphQL Int"
+                    ))
+                })?;
+
+                Ok(Some(FieldValue::value(count)))
+            })
+        },
+    )
+    .description("Rows matching the filter, across all pages.")
 }
 
 fn page_info_object() -> Object {
@@ -555,6 +603,8 @@ async fn resolve_collection<'a>(
         rows,
         cursors,
         page_info,
+        entity: entity_name.to_string(),
+        filter,
     })))
 }
 
