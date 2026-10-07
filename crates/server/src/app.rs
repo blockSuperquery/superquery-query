@@ -16,7 +16,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
 use crate::schema_loader::{load_schema, LoadedSchema};
-use crate::{graphql_http, health};
+use crate::{graphql_http, health, metrics};
 
 /// State shared by every handler.
 #[derive(Clone)]
@@ -162,6 +162,7 @@ pub fn router(state: AppState, config: &Config) -> Router {
         .route("/health", get(health::health))
         .route("/ready", get(health::ready))
         .route("/meta", get(health::meta))
+        .route("/metrics", get(metrics::metrics))
         .route("/graphql", post(graphql_http::graphql_handler));
 
     if config.playground {
