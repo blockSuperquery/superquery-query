@@ -222,3 +222,66 @@ pub(crate) fn group_by_parent(
     }
     grouped
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn row(id: &str, parent: Option<&str>) -> EntityRow {
+        let mut r = EntityRow::new();
+        r.insert("id".into(), json!(id));
+        r.insert(
+            "fromAccount".into(),
+            parent.map_or(serde_json::Value::Null, |p| json!(p)),
+        );
+        r
+    }
+
+    fn ids(rows: &[EntityRow]) -> Vec<&str> {
+        rows.iter()
+            .map(|r| r.get("id").and_then(|v| v.as_str()).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn batched_rows_go_back_to_their_own_parent() {
+        let rows = vec![
+            row("t1", Some("a")),
+            row("t2", Some("b")),
+            row("t3", Some("a")),
+        ];
+        let grouped = group_by_parent(rows, "fromAccount");
+        assert_eq!(ids(&grouped["a"]), ["t1", "t3"]);
+        assert_eq!(ids(&grouped["b"]), ["t2"]);
+    }
+
+    #[test]
+    fn grouping_preserves_sql_order_within_a_parent() {
+        // The statement orders by (fk, id); regrouping must not reshuffle it.
+        let rows = vec![
+            row("t1", Some("a")),
+            row("t2", Some("a")),
+            row("t9", Some("a")),
+        ];
+        let grouped = group_by_parent(rows, "fromAccount");
+        assert_eq!(ids(&grouped["a"]), ["t1", "t2", "t9"]);
+    }
+
+    #[test]
+    fn rows_without_a_parent_are_dropped() {
+        let grouped = group_by_parent(vec![row("t1", None)], "fromAccount");
+        assert!(grouped.is_empty());
+    }
+
+    #[test]
+    fn keys_for_the_same_row_are_equal() {
+        // DataLoader de-duplicates on key equality: two parents pointing at one
+        // account must collapse to a single id in the batch.
+        assert_eq!(
+            EntityKey::new("Account", "a"),
+            EntityKey::new("Account", "a")
+        );
+        assert_ne!(EntityKey::new("Account", "a"), EntityKey::new("Pool", "a"));
+    }
+}

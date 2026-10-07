@@ -723,6 +723,85 @@ mod tests {
         assert_eq!(q.params, vec![Some("{\"a\",\"b\"}".to_string())]);
     }
 
+    const RELATION_SDL: &str = r#"
+        type Account @entity {
+          id: ID!
+          transfers: [Transfer!]! @derivedFrom(field: "fromAccount")
+        }
+        type Transfer @entity {
+          id: ID!
+          value: BigInt!
+          fromAccount: Account!
+        }
+    "#;
+
+    #[test]
+    fn reverse_relation_batches_every_parent_into_one_param() {
+        let ir = parse_sdl(RELATION_SDL).unwrap();
+        let e = ir.entity("Transfer").unwrap();
+        let parents: Vec<String> = (0..50).map(|i| format!("acct-{i}")).collect();
+        let (q, _) = select_by_parent_ids("app", e, "fromAccount", &parents, 20).unwrap();
+
+        // 50 parents, one statement, one parameter.
+        assert!(
+            q.sql
+                .contains(r#"e."from_account" = ANY($1::text::text[])"#),
+            "{}",
+            q.sql
+        );
+        assert_eq!(q.params.len(), 1);
+        assert!(!q.sql.contains("$2"));
+    }
+
+    #[test]
+    fn reverse_relation_caps_each_parent_not_the_batch() {
+        // A plain LIMIT 20 would let one busy parent take all 20 rows and
+        // leave every other parent empty.
+        let ir = parse_sdl(RELATION_SDL).unwrap();
+        let e = ir.entity("Transfer").unwrap();
+        let (q, _) = select_by_parent_ids("app", e, "fromAccount", &["a".into()], 20).unwrap();
+        assert!(q
+            .sql
+            .contains(r#"row_number() OVER (PARTITION BY e."from_account" ORDER BY e."id" ASC)"#));
+        assert!(q.sql.contains(r#"w."__rn" <= 20"#));
+        assert!(!q.sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn reverse_relation_does_not_leak_the_row_number() {
+        let ir = parse_sdl(RELATION_SDL).unwrap();
+        let e = ir.entity("Transfer").unwrap();
+        let (q, fields) = select_by_parent_ids("app", e, "fromAccount", &["a".into()], 5).unwrap();
+        // The outer SELECT lists exactly the projection, so positional decode
+        // lines up and `__rn` is never returned.
+        assert!(
+            q.sql
+                .starts_with(r#"SELECT w."id", w."value", w."from_account" FROM ("#),
+            "{}",
+            q.sql
+        );
+        assert_eq!(fields.len(), 3);
+    }
+
+    #[test]
+    fn reverse_relation_parent_ids_stay_data() {
+        let ir = parse_sdl(RELATION_SDL).unwrap();
+        let e = ir.entity("Transfer").unwrap();
+        let evil = r#"x"}'); DROP TABLE transfers; --"#.to_string();
+        let (q, _) = select_by_parent_ids("app", e, "fromAccount", &[evil], 5).unwrap();
+        assert!(!q.sql.contains("DROP"));
+        assert!(q.params[0].as_deref().unwrap().contains("DROP"));
+    }
+
+    #[test]
+    fn reverse_relation_requires_a_foreign_key_field() {
+        let ir = parse_sdl(RELATION_SDL).unwrap();
+        let e = ir.entity("Transfer").unwrap();
+        // A scalar column is not a relation, and an unknown name is not anything.
+        assert!(select_by_parent_ids("app", e, "value", &["a".into()], 5).is_err());
+        assert!(select_by_parent_ids("app", e, "nope", &["a".into()], 5).is_err());
+    }
+
     #[test]
     fn ordering_is_qualified_so_it_cannot_bind_to_a_text_alias() {
         // Regression. The SELECT list projects `e."value"::text AS "value"`, and
