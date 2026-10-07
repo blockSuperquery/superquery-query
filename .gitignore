@@ -10,3 +10,7 @@ deploy/.data/
 .DS_Store
 .idea/
 .vscode/
+
+# Local planning notes — not part of the repo.
+docs_query.md
+docs_query_progress.md
