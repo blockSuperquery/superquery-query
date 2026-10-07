@@ -314,6 +314,36 @@ pub fn select_collection(
     ))
 }
 
+/// `SELECT count(*) … WHERE <filter>` — `totalCount` on a connection.
+///
+/// Same filter compiler as [`select_collection`], so the count can never
+/// disagree with the rows it describes. Ordering and the cursor are ignored on
+/// purpose: Relay's `totalCount` is the size of the filtered set, not of what
+/// is left after the current page.
+///
+/// Rendered as text like every other column, so the count reaches GraphQL the
+/// same way regardless of how large the table grows.
+pub fn count_collection(
+    schema: &str,
+    entity: &Entity,
+    filter: Option<&FilterExpr>,
+) -> PgResult<SqlQuery> {
+    let mut params = Params::default();
+    let where_clause = match filter {
+        Some(f) => format!(" WHERE {}", compile_filter(entity, f, &mut params)?),
+        None => String::new(),
+    };
+    let sql = format!(
+        "SELECT count(*)::text FROM {}{}",
+        table_ref(schema, entity)?,
+        where_clause
+    );
+    Ok(SqlQuery {
+        sql,
+        params: params.values,
+    })
+}
+
 /// Compile a filter tree into a SQL predicate.
 fn compile_filter(entity: &Entity, expr: &FilterExpr, params: &mut Params) -> PgResult<String> {
     Ok(match expr {
@@ -829,6 +859,47 @@ mod tests {
             "unqualified ORDER BY sorts numerics lexicographically: {}",
             q.sql
         );
+    }
+
+    #[test]
+    fn count_shares_the_filter_and_skips_paging() {
+        let ir = ir();
+        let e = ir.entity("Transfer").unwrap();
+        let filter = FilterExpr::Compare {
+            field: f("value", "value"),
+            op: CmpOp::Gt,
+            value: serde_json::json!("1000"),
+        };
+        let q = count_collection("app", e, Some(&filter)).unwrap();
+        assert_eq!(
+            q.sql,
+            r#"SELECT count(*)::text FROM "app"."transfers" AS e WHERE e."value" > $1::text::numeric"#
+        );
+        assert_eq!(q.params, vec![Some("1000".to_string())]);
+    }
+
+    #[test]
+    fn unfiltered_count_has_no_where_clause() {
+        let ir = ir();
+        let e = ir.entity("Transfer").unwrap();
+        let q = count_collection("app", e, None).unwrap();
+        assert!(!q.sql.contains("WHERE"));
+        assert!(q.params.is_empty());
+    }
+
+    #[test]
+    fn count_keeps_injection_in_params() {
+        let ir = ir();
+        let e = ir.entity("Transfer").unwrap();
+        let evil = "x' OR 1=1; --";
+        let filter = FilterExpr::Compare {
+            field: f("from", "from"),
+            op: CmpOp::Eq,
+            value: serde_json::json!(evil),
+        };
+        let q = count_collection("app", e, Some(&filter)).unwrap();
+        assert!(!q.sql.contains("OR 1=1"));
+        assert_eq!(q.params, vec![Some(evil.to_string())]);
     }
 
     #[test]
