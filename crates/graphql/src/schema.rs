@@ -29,16 +29,13 @@ use async_graphql::dynamic::{
 use async_graphql::Value as GqlValue;
 use superquery_postgres::row::EntityRow;
 use superquery_postgres::{decode_row, sql};
-use superquery_query_core::filter::{CmpOp, Field as FilterField};
 use superquery_query_core::pagination::PageDirection;
 use superquery_query_core::schema::{Entity, FieldKind};
-use superquery_query_core::{
-    Cursor, FilterExpr, Ordering, PageInfo, PageRequest, ScalarType, SchemaIr,
-};
+use superquery_query_core::{Cursor, Ordering, PageInfo, PageRequest, ScalarType, SchemaIr};
 
 use crate::context::QueryContext;
 use crate::limits::Limits;
-use crate::loader::EntityKey;
+use crate::loader::{DerivedKey, EntityKey};
 use crate::{filters, naming, ordering, scalars};
 
 /// A resolved page, passed from the collection resolver to the connection fields.
@@ -173,11 +170,13 @@ fn relation_field(field: &superquery_query_core::SchemaField, target: &str) -> F
     })
 }
 
-/// A `@derivedFrom` reverse relation: a filtered collection on the owning side.
+/// A `@derivedFrom` reverse relation: a filtered list on the owning side.
 ///
 /// Exposed as a plain list rather than a connection, matching SubQuery, since
-/// reverse relations are usually small. It is still bounded by `max_page_size`
-/// so a pathological parent cannot pull an unbounded set.
+/// reverse relations are usually small. Loaded through the
+/// [`DerivedLoader`](crate::loader::DerivedLoader): every parent in the layer
+/// shares one statement, and each parent is capped at the default page size so
+/// a pathological parent cannot pull an unbounded set.
 fn derived_field(
     field: &superquery_query_core::SchemaField,
     target: &str,
@@ -196,61 +195,20 @@ fn derived_field(
             };
 
             let qctx = ctx.data::<QueryContext>()?;
-            let entity = lookup_entity(&qctx.ir, &target)?;
-
-            // Resolve the FK column on the owning side through the IR, so this
-            // is a generated column name like every other.
-            let fk = entity
-                .field(&target_field)
-                .and_then(|f| f.column.clone())
-                .ok_or_else(|| {
-                    async_graphql::Error::new(format!(
-                        "`{target}.{target_field}` is missing; schema and IR disagree"
-                    ))
-                })?;
-
-            let filter = FilterExpr::Compare {
-                field: FilterField::resolved(&target_field, fk),
-                op: CmpOp::Eq,
-                value: serde_json::Value::String(parent_id.to_string()),
+            let key = DerivedKey {
+                entity: target,
+                fk_field: target_field,
+                parent_id: parent_id.to_string(),
             };
-
-            let id_field = id_filter_field(entity)?;
-            let page = PageRequest::resolve(
-                None,
-                None,
-                None,
-                None,
-                1,
-                qctx.limits.max_page_size,
-                qctx.limits.default_page_size,
-            )
-            .map_err(to_gql)?;
-
-            let (query, fields) = sql::select_collection(
-                &qctx.db_schema,
-                entity,
-                Some(&filter),
-                &Ordering::default_for(id_field),
-                &page,
-            )
-            .map_err(to_gql)?;
-
             let rows = qctx
-                .db
-                .query(&query.sql, &query.params_as_refs())
+                .derived
+                .load_one(key)
                 .await
-                .map_err(to_gql)?;
-
-            // Drop the extra over-fetched row; it only exists to signal more.
-            let decoded = rows
-                .iter()
-                .take(page.limit as usize)
-                .map(|r| decode_row(r, &fields).map_err(to_gql))
-                .collect::<Result<Vec<_>, _>>()?;
+                .map_err(to_gql)?
+                .unwrap_or_default();
 
             Ok(Some(FieldValue::list(
-                decoded.into_iter().map(FieldValue::owned_any),
+                rows.into_iter().map(FieldValue::owned_any),
             )))
         })
     })
@@ -631,14 +589,6 @@ fn build_cursor(
     }
 
     Ok(Cursor::new(values))
-}
-
-fn id_filter_field(entity: &Entity) -> async_graphql::Result<FilterField> {
-    entity
-        .field("id")
-        .and_then(|f| f.column.clone())
-        .map(|c| FilterField::resolved("id", c))
-        .ok_or_else(|| async_graphql::Error::new(format!("`{}` has no id column", entity.name)))
 }
 
 fn lookup_entity<'a>(ir: &'a SchemaIr, name: &str) -> async_graphql::Result<&'a Entity> {

@@ -7,7 +7,7 @@ use superquery_postgres::Database;
 use superquery_query_core::SchemaIr;
 
 use crate::limits::Limits;
-use crate::loader::EntityLoader;
+use crate::loader::{DerivedLoader, EntityLoader};
 
 /// Everything a resolver needs: the connection pool, the schema IR the API was
 /// generated from, and which Postgres schema to read.
@@ -25,6 +25,8 @@ pub struct QueryContext {
     /// Batches forward-relation lookups across a layer. Shared, not per
     /// request; see `loader` for why that is safe without a cache.
     pub entities: Arc<DataLoader<EntityLoader>>,
+    /// Batches `@derivedFrom` reverse relations by parent id.
+    pub derived: Arc<DataLoader<DerivedLoader>>,
 }
 
 impl QueryContext {
@@ -39,12 +41,25 @@ impl QueryContext {
             EntityLoader::new(db.clone(), Arc::clone(&ir), db_schema.clone()),
             tokio::spawn,
         );
+        // Matches what the unbatched resolver returned: one default-sized page
+        // per parent, never more than the configured maximum.
+        let per_parent_limit = limits.default_page_size.min(limits.max_page_size);
+        let derived = DataLoader::new(
+            DerivedLoader::new(
+                db.clone(),
+                Arc::clone(&ir),
+                db_schema.clone(),
+                per_parent_limit,
+            ),
+            tokio::spawn,
+        );
         Self {
             db,
             ir,
             db_schema,
             limits,
             entities: Arc::new(entities),
+            derived: Arc::new(derived),
         }
     }
 }

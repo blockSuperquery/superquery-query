@@ -104,3 +104,121 @@ impl Loader<EntityKey> for EntityLoader {
         Ok(out)
     }
 }
+
+/// The rows on the owning side of a `@derivedFrom` relation, for one parent.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DerivedKey {
+    /// The owning entity, e.g. `Transfer`.
+    pub entity: String,
+    /// Its foreign-key field pointing back at the parent, e.g. `fromAccount`.
+    pub fk_field: String,
+    pub parent_id: String,
+}
+
+/// Loads reverse relations, batched by parent id.
+pub struct DerivedLoader {
+    db: Database,
+    ir: Arc<SchemaIr>,
+    db_schema: String,
+    /// Rows returned per parent. Reverse relations are plain lists, not
+    /// connections, so this cap is what keeps one popular parent bounded.
+    per_parent_limit: u32,
+}
+
+impl DerivedLoader {
+    pub fn new(
+        db: Database,
+        ir: Arc<SchemaIr>,
+        db_schema: impl Into<String>,
+        per_parent_limit: u32,
+    ) -> Self {
+        Self {
+            db,
+            ir,
+            db_schema: db_schema.into(),
+            per_parent_limit,
+        }
+    }
+}
+
+impl Loader<DerivedKey> for DerivedLoader {
+    type Value = Vec<EntityRow>;
+    type Error = String;
+
+    async fn load(
+        &self,
+        keys: &[DerivedKey],
+    ) -> Result<HashMap<DerivedKey, Vec<EntityRow>>, String> {
+        // Two different @derivedFrom fields in one layer target different
+        // tables or columns, so each (entity, fk) pair is its own statement.
+        let mut groups: HashMap<(&str, &str), Vec<String>> = HashMap::new();
+        for key in keys {
+            groups
+                .entry((key.entity.as_str(), key.fk_field.as_str()))
+                .or_default()
+                .push(key.parent_id.clone());
+        }
+
+        let mut out = HashMap::with_capacity(keys.len());
+        for ((entity_name, fk_field), parent_ids) in groups {
+            let entity = self
+                .ir
+                .entity(entity_name)
+                .ok_or_else(|| format!("entity `{entity_name}` is not in the active schema"))?;
+
+            let (query, fields) = sql::select_by_parent_ids(
+                &self.db_schema,
+                entity,
+                fk_field,
+                &parent_ids,
+                self.per_parent_limit,
+            )
+            .map_err(|e| e.to_string())?;
+            let rows = self
+                .db
+                .query(&query.sql, &query.params_as_refs())
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let decoded = rows
+                .iter()
+                .map(|r| decode_row(r, &fields).map_err(|e| e.to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut grouped = group_by_parent(decoded, fk_field);
+
+            // Every requested parent gets an entry. A parent with no children
+            // is an empty list — the field is `[T!]!`, so null would be wrong.
+            for parent_id in parent_ids {
+                let rows = grouped.remove(&parent_id).unwrap_or_default();
+                out.insert(
+                    DerivedKey {
+                        entity: entity_name.to_string(),
+                        fk_field: fk_field.to_string(),
+                        parent_id,
+                    },
+                    rows,
+                );
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+/// Split a batched result back out by the parent id each row points at.
+///
+/// Row order within a parent is preserved, so the `id` ordering the SQL
+/// applied survives the regrouping.
+pub(crate) fn group_by_parent(
+    rows: Vec<EntityRow>,
+    fk_field: &str,
+) -> HashMap<String, Vec<EntityRow>> {
+    let mut grouped: HashMap<String, Vec<EntityRow>> = HashMap::new();
+    for row in rows {
+        let Some(parent) = row.get(fk_field).and_then(|v| v.as_str()) else {
+            continue;
+        };
+        grouped.entry(parent.to_string()).or_default().push(row);
+    }
+    grouped
+}
