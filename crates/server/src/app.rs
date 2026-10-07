@@ -25,6 +25,8 @@ pub struct AppState {
     pub db_schema: String,
     /// Checked against the raw document before execution (aliases today).
     pub limits: Limits,
+    /// Queries allowed in one batched request; `None` when unlimited.
+    pub batch_limit: Option<usize>,
     /// Behind a lock so a future hot reload can replace it without a restart.
     /// `Schema` is internally reference-counted, so cloning it out per request
     /// is cheap and keeps the lock uncontended.
@@ -147,6 +149,7 @@ pub async fn build_state(config: &Config) -> Result<AppState> {
         ir,
         db_schema: config.name.clone(),
         limits,
+        batch_limit: config.batch_limit(),
         schema: Arc::new(RwLock::new(schema)),
     })
 }

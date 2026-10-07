@@ -74,6 +74,10 @@ pub struct Config {
     )]
     pub query_alias_limit: usize,
 
+    /// Maximum queries in one batched (JSON array) request.
+    #[arg(long, default_value_t = 10, env = "SUPERQUERY_QUERY_BATCH_LIMIT")]
+    pub query_batch_limit: usize,
+
     /// Per-request time budget, in milliseconds.
     #[arg(long, default_value_t = 10_000, env = "SUPERQUERY_QUERY_TIMEOUT")]
     pub query_timeout: u64,
@@ -116,6 +120,11 @@ impl Config {
             default_page_size: superquery_query_core::DEFAULT_PAGE_SIZE.min(self.query_limit),
             timeout: Duration::from_millis(self.query_timeout),
         }
+    }
+
+    /// Batch size cap; `None` under `--unsafe`, like every other limit.
+    pub fn batch_limit(&self) -> Option<usize> {
+        (!self.unsafe_mode).then_some(self.query_batch_limit)
     }
 
     pub fn bind_address(&self) -> String {
@@ -187,6 +196,25 @@ mod tests {
     fn unsafe_mode_removes_limits() {
         let c = parse(&["--name", "app", "--schema", "s.graphql", "--unsafe"]);
         assert!(c.limits().is_unrestricted());
+    }
+
+    #[test]
+    fn batch_limit_defaults_and_is_lifted_by_unsafe() {
+        let c = parse(&["--name", "app", "--schema", "s.graphql"]);
+        assert_eq!(c.batch_limit(), Some(10));
+
+        let c = parse(&[
+            "--name",
+            "app",
+            "--schema",
+            "s.graphql",
+            "--query-batch-limit",
+            "3",
+        ]);
+        assert_eq!(c.batch_limit(), Some(3));
+
+        let c = parse(&["--name", "app", "--schema", "s.graphql", "--unsafe"]);
+        assert_eq!(c.batch_limit(), None);
     }
 
     #[test]
