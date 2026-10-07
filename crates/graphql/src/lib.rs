@@ -19,6 +19,7 @@
 pub mod context;
 pub mod filters;
 pub mod limits;
+pub mod loader;
 pub mod naming;
 pub mod ordering;
 pub mod scalars;
