@@ -19,6 +19,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use serde_json::{json, Value};
+use superquery_postgres::PgError;
 
 use crate::app::AppState;
 
@@ -30,21 +31,42 @@ pub async fn health() -> (StatusCode, Json<Value>) {
     )
 }
 
-/// `GET /ready` — readiness. 200 only when the database is reachable.
+/// `GET /ready` — readiness. 200 only when the project can actually be read.
+///
+/// Reads `_metadata` rather than running `SELECT 1`. A round-trip proves the
+/// server is up, but a dropped project schema or a revoked grant answers
+/// `SELECT 1` just fine and then fails every query — the guide asks that
+/// readiness not succeed until the DB *and* the schema are usable.
 pub async fn ready(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
-    match state.db.ping().await {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(json!({ "status": "ready", "project": state.db_schema })),
-        ),
+    match state.db.read_metadata(&state.db_schema).await {
+        Ok(rows) => {
+            let meta = superquery_query_core::ProjectMeta::from_rows(&state.db_schema, rows);
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "status": "ready",
+                    "project": state.db_schema,
+                    "indexedHeight": meta.last_processed_height,
+                })),
+            )
+        }
         Err(err) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({
                 "status": "not_ready",
-                "reason": "database unreachable",
+                "reason": not_ready_reason(&err),
                 "detail": err.to_string(),
             })),
         ),
+    }
+}
+
+/// Separates "cannot reach Postgres" from "reached it, but the project is
+/// gone": the first is an infrastructure page, the second a deployment one.
+fn not_ready_reason(err: &PgError) -> &'static str {
+    match err {
+        PgError::Connection(_) | PgError::Pool(_) => "database unreachable",
+        _ => "project metadata unreadable",
     }
 }
 
@@ -81,4 +103,25 @@ pub async fn meta(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
             "queryVersion": env!("CARGO_PKG_VERSION"),
         })),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outage_and_missing_project_are_reported_differently() {
+        assert_eq!(
+            not_ready_reason(&PgError::Connection("refused".into())),
+            "database unreachable"
+        );
+        assert_eq!(
+            not_ready_reason(&PgError::Pool("timed out".into())),
+            "database unreachable"
+        );
+        assert_eq!(
+            not_ready_reason(&PgError::InvalidIdentifier("x".into())),
+            "project metadata unreadable"
+        );
+    }
 }
