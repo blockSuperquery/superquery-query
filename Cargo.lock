@@ -1911,6 +1911,7 @@ dependencies = [
  "superquery-query-core",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-postgres",
  "tower",
  "tower-http",
  "tracing",

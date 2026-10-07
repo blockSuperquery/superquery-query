@@ -28,3 +28,8 @@ anyhow.workspace = true
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+# Integration tests load their fixture through a read-write connection of
+# their own; the service under test keeps its read-only pool.
+tokio-postgres.workspace = true
