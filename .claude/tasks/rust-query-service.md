@@ -1,6 +1,6 @@
 # Task: SuperQuery Query — Rust implementation plan
 
-**Status:** M0–M7 landed (scaffold), M8 partial. **Last updated:** 2026-09-09.
+**Status:** M0–M8 and M11 landed; M12–M14 partial; M9/M10 blocked on the node. **Last updated:** 2026-10-07.
 
 Reference material:
 - [`../docs/IMPLEMENTATION_GUIDE.md`](../docs/IMPLEMENTATION_GUIDE.md) — the original design guide
@@ -178,19 +178,21 @@ output names *first*. Effects:
 Guarded by `sql::tests::ordering_is_qualified_so_it_cannot_bind_to_a_text_alias`.
 **Any new SQL that references a column must go through the alias.**
 
-### 🟡 M8 — Relationships
+### ✅ M8 — Relationships
 
-Done: forward FK relations, `@derivedFrom` reverse relations.
+Forward FK relations and `@derivedFrom` reverse relations, both batched.
 
-**Remaining — this is the next task.** Relations currently issue one statement
-per parent row. `sql::select_by_ids` already exists and batches into
-`WHERE id = ANY($1)`; wire it to `async_graphql::dataloader::DataLoader`
-(the `dataloader` feature is already enabled).
+- `crates/graphql/src/loader.rs` — `EntityLoader` keyed by `(entity, id)` →
+  `sql::select_by_ids`; `DerivedLoader` keyed by `(entity, fk, parent id)` →
+  `sql::select_by_parent_ids`. Both live on `QueryContext`, shared, **no
+  cache** (a schema-lifetime cache would serve rows the node has updated).
+- Reverse relations are capped **per parent** with
+  `row_number() OVER (PARTITION BY fk ORDER BY id)` — a plain `LIMIT` would let
+  one busy parent starve the rest of the batch.
+- A parent with no children gets `[]`, never `null` (the field is `[T!]!`).
 
-- [ ] `DataLoader` keyed by `(entity, id)`, stored in `QueryContext`
-- [ ] `relation_field` loads through it instead of querying directly
-- [ ] derived relations batch by parent id
-- [ ] test: N parents ⇒ 2 statements, not N+1
+**Acceptance met:** the integration test asserts N parents ⇒ 2 statements for
+both directions.
 
 Upstream reference: [`PgBackwardRelationPlugin.ts`](https://github.com/subquery/subql/blob/main/packages/query/src/graphql/plugins/PgBackwardRelationPlugin.ts)
 
@@ -224,55 +226,76 @@ does not emit `NOTIFY` yet.
 Deliberately last among read features: a subscription inherits every correctness
 question the one-shot path has, and adds fan-out and backpressure on top.
 
-### ⬜ M11 — Schema hot reload
+### ✅ M11 — Schema hot reload
 
-The seam exists: `AppState::replace_schema`, and the schema is cloned per request
-so in-flight work is unaffected.
+- `crates/server/src/schema_loader.rs` — one parse → validate → build step for
+  startup *and* reload, so a reload is held to the same checks.
+- `crates/server/src/reload.rs` — polls a fingerprint of
+  `_metadata.schemaMigrationCount` + hash of `schema.graphql`; on change,
+  rebuilds and swaps IR + schema under one lock.
+- **A failed rebuild leaves the old schema live**; logged once per distinct
+  fingerprint, retried on later ticks.
+- `--disable-hot-schema` (upstream's flag), `--hot-schema-interval` (≥ 1s).
 
-- [ ] listen on `superquery_<schema>_schema`, or poll `schemaMigrationCount`
-- [ ] rebuild and swap atomically; **a failed rebuild leaves the old schema live**
-- [ ] mirror upstream's `--disable-hot-schema`
+- [ ] switch the wake-up from polling to `LISTEN superquery_<schema>_schema`
+      once the node emits it (⛔ node)
 
 ### 🟡 M12 — Query limits
 
 Done: depth, complexity, page-size clamping, request timeout (504), body size,
-`--unsafe` with a startup warning.
+`--unsafe` with a startup warning, **alias limit** (`--query-alias-limit`,
+counted over the parsed document before validation), **batched requests** with
+`--query-batch-limit` (executed sequentially so a batch cannot hold N pool
+connections).
 
-- [ ] alias limit ([`QueryAliasLimitPlugin.ts`](https://github.com/subquery/subql/blob/main/packages/query/src/graphql/plugins/QueryAliasLimitPlugin.ts))
-- [ ] batch limit (`--query-batch-limit`)
+- [x] alias limit ([`QueryAliasLimitPlugin.ts`](https://github.com/subquery/subql/blob/main/packages/query/src/graphql/plugins/QueryAliasLimitPlugin.ts))
+- [x] batch limit (`--query-batch-limit`)
 - [ ] rate limiting
 
-### ⬜ M13 — Aggregates
+### 🟡 M13 — Aggregates
 
-`transfersAggregate { count }`, then typed numeric aggregates. Explicitly not a
-v0 requirement.
+Done: `totalCount: Int!` on every connection — `sql::count_collection` over the
+same compiled filter, run only when selected.
 
-### ⬜ M14 — Metrics
+- [ ] `transfersAggregate { count }`
+- [ ] typed numeric aggregates (`sum`/`min`/`max`/`avg`; BigInt stays a string)
 
-Signals and rationale are listed in `crates/server/src/metrics.rs`. Benchmark a
-realistic generated schema — a hello-world GraphQL benchmark measures the HTTP
-stack, not this service.
+### 🟡 M14 — Metrics
+
+`GET /metrics`, Prometheus text format, rendered by hand from atomics:
+`/graphql` requests by status class and latency, PostgreSQL statement/error
+totals and latency (pool acquire + execution), pool max/size/available/waiting,
+served entity count, build info.
+
+`/ready` now reads `_metadata` rather than `SELECT 1`, so a dropped project
+schema or revoked grant fails readiness.
+
+- [ ] resolver latency, query complexity distribution
+- [ ] active WebSockets (with M10)
+- [ ] benchmark a realistic generated schema — a hello-world GraphQL benchmark
+      measures the HTTP stack, not this service
 
 ---
 
 ## 3. Verification
 
 ```bash
-cargo test --workspace          # 127 tests, no database required
+cargo test --workspace          # no database required
 cargo clippy --workspace --all-targets
+cargo test -p superquery-server --test integration -- --ignored   # needs Postgres
 ```
 
-An end-to-end run against a real Postgres, with a fixture shaped exactly as the
-node's DDL would produce it, confirmed: by-id, collections, filters, ordering,
-cursor pagination across a tied sort key, forward and reverse relations, `_meta`,
-2^256−1 round-tripping exactly, `Bytes` as `0x`-hex, depth rejection, page-size
-clamping, and all three startup failure modes.
+`crates/server/tests/integration.rs` automates the end-to-end run against a
+fixture shaped exactly as the node's DDL would produce it
+(`tests/fixtures/erc20.sql`): by-id, 2^256−1 round-tripping exactly, `Bytes`
+as `0x`-hex, filters + `totalCount`, injection staying data, numeric ordering,
+cursor pagination across a tied sort key, forward and reverse relations in 2
+statements each, alias rejection with zero statements, `/ready`, `/metrics`.
+CI's `integration` job runs it with a Postgres service container.
 
-**Still owed:** a checked-in integration test that automates the above against a
-containerized Postgres (guide §23) — currently the fixture is manual.
-
-- [ ] `tests/integration/` with a Postgres fixture, `#[ignore]` by default
-- [ ] CI job that runs it with a service container
+**Still owed:** the cross-repo test of guide §23 (sdk build → node indexes a
+known ERC-20 range → query returns the exact entity; restart and synthetic
+reorg).
 
 ---
 
