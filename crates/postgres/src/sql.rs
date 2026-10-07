@@ -168,25 +168,93 @@ pub fn select_by_ids(
     let fields = projection(entity);
     // ANY() takes one array parameter, so the statement text is identical
     // regardless of how many ids are batched — good for the plan cache.
+    //
+    // Bound as text and cast in SQL. A bare `$1::text[]` makes the driver type
+    // the parameter itself as `text[]`, and the array literal we bind is a
+    // String, so every batched lookup failed with "error serializing
+    // parameter 0".
     let sql = format!(
-        "SELECT {} FROM {} WHERE {T}.\"id\" = ANY($1::text[])",
+        "SELECT {} FROM {} WHERE {T}.\"id\" = ANY($1::text::text[])",
         select_list(&fields),
         table_ref(schema, entity)?,
     );
     Ok((
         SqlQuery {
             sql,
-            // Rendered as a Postgres array literal, cast back by ::text[].
-            params: vec![Some(format!(
-                "{{{}}}",
-                ids.iter()
-                    .map(|i| format!("\"{}\"", i.replace('\\', "\\\\").replace('"', "\\\"")))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ))],
+            params: vec![Some(text_array_literal(ids))],
         },
         fields,
     ))
+}
+
+/// `SELECT … WHERE fk = ANY($1)`, capped per parent — the batched reverse
+/// relation.
+///
+/// A `@derivedFrom` field asks "every `Transfer` whose `fromAccount` is this
+/// account". Resolving that once per parent is the N+1 the DataLoader exists to
+/// remove, so all parent ids in a layer go into one `ANY($1)`.
+///
+/// The cap cannot be a plain `LIMIT`: that would bound the *whole batch*, and
+/// one busy parent would starve the rest. `row_number()` partitioned by the FK
+/// bounds each parent independently, ordered by `id` so the cut is
+/// deterministic. The outer query re-selects the projected columns by name so
+/// rows still decode positionally and `__rn` never reaches the client.
+pub fn select_by_parent_ids(
+    schema: &str,
+    entity: &Entity,
+    fk_field: &str,
+    parent_ids: &[String],
+    per_parent_limit: u32,
+) -> PgResult<(SqlQuery, Vec<ProjectedField>)> {
+    let fk = entity
+        .field(fk_field)
+        .filter(|f| matches!(f.kind, FieldKind::Relation { .. }))
+        .and_then(|f| f.column.clone())
+        .ok_or_else(|| {
+            PgError::Core(superquery_query_core::CoreError::UnknownField {
+                entity: entity.name.clone(),
+                field: format!("{fk_field} (not a foreign key)"),
+            })
+        })?;
+
+    let fields = projection(entity);
+    let outer = fields
+        .iter()
+        .map(|f| format!("w.\"{}\"", f.column))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // Interpolated, not bound: a u32 this crate clamped. See module docs.
+    let sql = format!(
+        "SELECT {outer} FROM (\
+           SELECT {}, row_number() OVER (PARTITION BY {T}.\"{fk}\" ORDER BY {T}.\"id\" ASC) AS \"__rn\" \
+           FROM {} WHERE {T}.\"{fk}\" = ANY($1::text::text[])\
+         ) AS w WHERE w.\"__rn\" <= {per_parent_limit} ORDER BY w.\"{fk}\", w.\"id\"",
+        select_list(&fields),
+        table_ref(schema, entity)?,
+    );
+
+    Ok((
+        SqlQuery {
+            sql,
+            params: vec![Some(text_array_literal(parent_ids))],
+        },
+        fields,
+    ))
+}
+
+/// Render ids as a Postgres array literal, cast back by `::text::text[]`.
+///
+/// Still one bound parameter: the literal is data, so quoting here only has to
+/// satisfy the array parser, not the SQL parser.
+fn text_array_literal(ids: &[String]) -> String {
+    format!(
+        "{{{}}}",
+        ids.iter()
+            .map(|i| format!("\"{}\"", i.replace('\\', "\\\\").replace('"', "\\\"")))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
 }
 
 /// The collection query: filter + order + keyset page (Milestones 5–7).
@@ -651,7 +719,7 @@ mod tests {
         let ir = ir();
         let e = ir.entity("Transfer").unwrap();
         let (q, _) = select_by_ids("app", e, &["a".into(), "b".into()]).unwrap();
-        assert!(q.sql.contains(r#"e."id" = ANY($1::text[])"#));
+        assert!(q.sql.contains(r#"e."id" = ANY($1::text::text[])"#));
         assert_eq!(q.params, vec![Some("{\"a\",\"b\"}".to_string())]);
     }
 
