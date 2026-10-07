@@ -66,6 +66,14 @@ pub struct Config {
     #[arg(long, default_value_t = 1000, env = "SUPERQUERY_QUERY_COMPLEXITY")]
     pub query_complexity: usize,
 
+    /// Maximum aliased fields in one query document.
+    #[arg(
+        long,
+        default_value_t = superquery_graphql::limits::DEFAULT_MAX_ALIASES,
+        env = "SUPERQUERY_QUERY_ALIAS_LIMIT"
+    )]
+    pub query_alias_limit: usize,
+
     /// Per-request time budget, in milliseconds.
     #[arg(long, default_value_t = 10_000, env = "SUPERQUERY_QUERY_TIMEOUT")]
     pub query_timeout: u64,
@@ -103,7 +111,7 @@ impl Config {
         Limits {
             max_depth: Some(self.query_depth_limit),
             max_complexity: Some(self.query_complexity),
-            max_aliases: Limits::default().max_aliases,
+            max_aliases: Some(self.query_alias_limit),
             max_page_size: self.query_limit,
             default_page_size: superquery_query_core::DEFAULT_PAGE_SIZE.min(self.query_limit),
             timeout: Duration::from_millis(self.query_timeout),
@@ -130,6 +138,7 @@ mod tests {
         assert_eq!(c.port, 3000);
         assert_eq!(c.query_limit, 100);
         assert_eq!(c.query_timeout, 10_000);
+        assert_eq!(c.query_alias_limit, 50);
         assert!(!c.playground);
         assert!(!c.unsafe_mode);
     }
@@ -151,10 +160,13 @@ mod tests {
             "5",
             "--query-limit",
             "50",
+            "--query-alias-limit",
+            "7",
         ]);
         let l = c.limits();
         assert_eq!(l.max_depth, Some(5));
         assert_eq!(l.max_page_size, 50);
+        assert_eq!(l.max_aliases, Some(7));
     }
 
     #[test]

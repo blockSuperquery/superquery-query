@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use async_graphql::dynamic::Schema;
 use axum::routing::{get, post};
 use axum::Router;
-use superquery_graphql::build_schema;
+use superquery_graphql::{build_schema, Limits};
 use superquery_postgres::{introspect, validate, Database, PgError};
 use superquery_query_core::{parse_sdl, SchemaIr};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -23,6 +23,8 @@ pub struct AppState {
     pub db: Database,
     pub ir: Arc<SchemaIr>,
     pub db_schema: String,
+    /// Checked against the raw document before execution (aliases today).
+    pub limits: Limits,
     /// Behind a lock so a future hot reload can replace it without a restart.
     /// `Schema` is internally reference-counted, so cloning it out per request
     /// is cheap and keeps the lock uncontended.
@@ -126,8 +128,13 @@ pub async fn build_state(config: &Config) -> Result<AppState> {
         );
     }
 
-    let schema = build_schema(Arc::clone(&ir), db.clone(), config.name.clone(), limits)
-        .context("building the GraphQL schema")?;
+    let schema = build_schema(
+        Arc::clone(&ir),
+        db.clone(),
+        config.name.clone(),
+        limits.clone(),
+    )
+    .context("building the GraphQL schema")?;
 
     tracing::info!(
         project = %config.name,
@@ -139,6 +146,7 @@ pub async fn build_state(config: &Config) -> Result<AppState> {
         db,
         ir,
         db_schema: config.name.clone(),
+        limits,
         schema: Arc::new(RwLock::new(schema)),
     })
 }
