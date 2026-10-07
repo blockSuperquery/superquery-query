@@ -16,11 +16,14 @@
 //! `SELECT`; this is defence in depth, not a substitute.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Instant;
 
-use deadpool_postgres::{Config as PoolConfig, Object, Pool, Runtime};
+use deadpool_postgres::{Config as PoolConfig, Object, Pool, Runtime, Status};
 use tokio_postgres::NoTls;
 
 use crate::error::{PgError, PgResult};
+use crate::stats::DbStats;
 
 /// Connection settings. Env-var names match the node's `DB_*` so a single
 /// docker-compose environment block configures both services.
@@ -72,6 +75,7 @@ impl DbConfig {
 #[derive(Clone)]
 pub struct Database {
     pool: Pool,
+    stats: Arc<DbStats>,
 }
 
 impl Database {
@@ -92,7 +96,21 @@ impl Database {
             .map_err(|e| PgError::Pool(e.to_string()))?;
         pool.resize(cfg.max_connections);
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            stats: Arc::default(),
+        })
+    }
+
+    /// Statement counters and latency, shared by every clone of this handle.
+    pub fn stats(&self) -> &DbStats {
+        &self.stats
+    }
+
+    /// Pool occupancy. `waiting > 0` is saturation: requests are queueing for a
+    /// connection, and that wait shows up in every latency figure.
+    pub fn pool_status(&self) -> Status {
+        self.pool.status()
     }
 
     /// Borrow a pooled client.
@@ -116,7 +134,11 @@ impl Database {
         sql: &str,
         params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
     ) -> PgResult<Vec<tokio_postgres::Row>> {
-        Ok(self.conn().await?.query(sql, params).await?)
+        let started = Instant::now();
+        let result: PgResult<Vec<tokio_postgres::Row>> =
+            async { Ok(self.conn().await?.query(sql, params).await?) }.await;
+        self.stats.record(started.elapsed(), result.is_ok());
+        result
     }
 
     /// Run a parameterized query expecting at most one row.
@@ -125,7 +147,11 @@ impl Database {
         sql: &str,
         params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
     ) -> PgResult<Option<tokio_postgres::Row>> {
-        Ok(self.conn().await?.query_opt(sql, params).await?)
+        let started = Instant::now();
+        let result: PgResult<Option<tokio_postgres::Row>> =
+            async { Ok(self.conn().await?.query_opt(sql, params).await?) }.await;
+        self.stats.record(started.elapsed(), result.is_ok());
+        result
     }
 
     /// Whether a schema exists, and if not, what does — so the error can tell

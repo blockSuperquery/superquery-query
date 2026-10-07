@@ -19,6 +19,7 @@ pub mod notify;
 pub mod pool;
 pub mod row;
 pub mod sql;
+pub mod stats;
 pub mod validate;
 
 pub use error::{PgError, PgResult};
@@ -26,4 +27,5 @@ pub use introspect::{introspect, ColumnInfo, SchemaInfo, TableInfo};
 pub use pool::{Database, DbConfig};
 pub use row::{decode_row, EntityRow};
 pub use sql::{ProjectedField, SqlQuery};
+pub use stats::{DbStats, Histogram, HistogramSnapshot};
 pub use validate::{validate, ValidationReport};
