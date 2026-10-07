@@ -86,6 +86,16 @@ pub struct Config {
     #[arg(long, default_value_t = 1024 * 1024, env = "SUPERQUERY_MAX_BODY_SIZE")]
     pub max_body_size: usize,
 
+    /// Do not watch for schema changes; a new schema then needs a restart.
+    ///
+    /// Same flag as upstream SubQuery.
+    #[arg(long, env = "SUPERQUERY_DISABLE_HOT_SCHEMA")]
+    pub disable_hot_schema: bool,
+
+    /// How often to check for a schema change, in milliseconds.
+    #[arg(long, default_value_t = 10_000, env = "SUPERQUERY_HOT_SCHEMA_INTERVAL")]
+    pub hot_schema_interval: u64,
+
     /// Disable depth, complexity and page-size limits.
     ///
     /// Only for a private deployment behind a trusted gateway. The service logs
@@ -125,6 +135,15 @@ impl Config {
     /// Batch size cap; `None` under `--unsafe`, like every other limit.
     pub fn batch_limit(&self) -> Option<usize> {
         (!self.unsafe_mode).then_some(self.query_batch_limit)
+    }
+
+    /// Poll interval for hot reload, or `None` when it is disabled.
+    ///
+    /// Floored at one second: a sub-second poll buys nothing a migration could
+    /// use and turns `_metadata` into a hot table.
+    pub fn hot_schema(&self) -> Option<Duration> {
+        (!self.disable_hot_schema)
+            .then(|| Duration::from_millis(self.hot_schema_interval.max(1_000)))
     }
 
     pub fn bind_address(&self) -> String {
@@ -215,6 +234,34 @@ mod tests {
 
         let c = parse(&["--name", "app", "--schema", "s.graphql", "--unsafe"]);
         assert_eq!(c.batch_limit(), None);
+    }
+
+    #[test]
+    fn hot_reload_is_on_by_default_and_can_be_disabled() {
+        let c = parse(&["--name", "app", "--schema", "s.graphql"]);
+        assert_eq!(c.hot_schema(), Some(Duration::from_secs(10)));
+
+        let c = parse(&[
+            "--name",
+            "app",
+            "--schema",
+            "s.graphql",
+            "--disable-hot-schema",
+        ]);
+        assert_eq!(c.hot_schema(), None);
+    }
+
+    #[test]
+    fn hot_reload_interval_has_a_floor() {
+        let c = parse(&[
+            "--name",
+            "app",
+            "--schema",
+            "s.graphql",
+            "--hot-schema-interval",
+            "10",
+        ]);
+        assert_eq!(c.hot_schema(), Some(Duration::from_secs(1)));
     }
 
     #[test]

@@ -11,6 +11,8 @@
 //!                  ├─ parse schema.graphql
 //!                  ├─ validate IR against the database
 //!                  └─ build the dynamic GraphQL schema
+//!
+//!   reload::spawn ──▶ poll fingerprint ──▶ load_schema ──▶ AppState::replace_schema
 //! ```
 
 pub mod app;
@@ -30,6 +32,13 @@ use anyhow::{Context, Result};
 /// Start the service and serve until shutdown is signalled.
 pub async fn serve(config: Config) -> Result<()> {
     let state = build_state(&config).await?;
+
+    // Detached on purpose: the watcher only ever swaps the schema, so it has
+    // nothing to flush, and it ends with the runtime at shutdown.
+    if let Some(interval) = config.hot_schema() {
+        reload::spawn(state.clone(), config.clone(), interval);
+    }
+
     let app = router(state, &config);
 
     let address = config.bind_address();
