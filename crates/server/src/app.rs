@@ -7,48 +7,76 @@ use anyhow::{Context, Result};
 use async_graphql::dynamic::Schema;
 use axum::routing::{get, post};
 use axum::Router;
-use superquery_graphql::{build_schema, Limits};
-use superquery_postgres::{introspect, validate, Database, PgError};
-use superquery_query_core::{parse_sdl, SchemaIr};
+use superquery_graphql::Limits;
+use superquery_postgres::{Database, PgError};
+use superquery_query_core::SchemaIr;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
+use crate::schema_loader::{load_schema, LoadedSchema};
 use crate::{graphql_http, health};
 
 /// State shared by every handler.
 #[derive(Clone)]
 pub struct AppState {
     pub db: Database,
-    pub ir: Arc<SchemaIr>,
     pub db_schema: String,
     /// Checked against the raw document before execution (aliases today).
     pub limits: Limits,
     /// Queries allowed in one batched request; `None` when unlimited.
     pub batch_limit: Option<usize>,
-    /// Behind a lock so a future hot reload can replace it without a restart.
-    /// `Schema` is internally reference-counted, so cloning it out per request
-    /// is cheap and keeps the lock uncontended.
-    schema: Arc<RwLock<Schema>>,
+    /// The served schema and its IR, behind one lock so hot reload replaces
+    /// both at once. `Schema` is internally reference-counted, so cloning it
+    /// out per request is cheap and keeps the lock uncontended.
+    active: Arc<RwLock<LoadedSchema>>,
 }
 
 impl AppState {
+    pub fn new(
+        db: Database,
+        db_schema: impl Into<String>,
+        limits: Limits,
+        batch_limit: Option<usize>,
+        loaded: LoadedSchema,
+    ) -> Self {
+        Self {
+            db,
+            db_schema: db_schema.into(),
+            limits,
+            batch_limit,
+            active: Arc::new(RwLock::new(loaded)),
+        }
+    }
+
     /// Take a snapshot of the current schema to execute against.
     pub fn schema(&self) -> Schema {
-        self.schema
+        self.active
             .read()
             .expect("schema lock is never held across a panic")
+            .schema
             .clone()
+    }
+
+    /// The IR the current schema was generated from.
+    pub fn ir(&self) -> Arc<SchemaIr> {
+        Arc::clone(
+            &self
+                .active
+                .read()
+                .expect("schema lock is never held across a panic")
+                .ir,
+        )
     }
 
     /// Replace the active schema (Milestone 11). In-flight requests are
     /// unaffected — they already hold their own clone.
-    pub fn replace_schema(&self, schema: Schema) {
+    pub fn replace_schema(&self, loaded: LoadedSchema) {
         *self
-            .schema
+            .active
             .write()
-            .expect("schema lock is never held across a panic") = schema;
+            .expect("schema lock is never held across a panic") = loaded;
     }
 }
 
@@ -103,25 +131,6 @@ pub async fn build_state(config: &Config) -> Result<AppState> {
         .await
         .map_err(|_| PgError::NotAProjectSchema(config.name.clone()))?;
 
-    let sdl = std::fs::read_to_string(&config.schema)
-        .with_context(|| format!("reading project schema at {}", config.schema.display()))?;
-    let ir = Arc::new(parse_sdl(&sdl).context("parsing the project schema")?);
-
-    if ir.is_empty() {
-        tracing::warn!(
-            path = %config.schema.display(),
-            "project schema declares no @entity types — the API will expose no queryable data"
-        );
-    }
-
-    // The guarantee the guide asks for: fail loudly at startup if the database
-    // and the project schema have diverged, rather than deep inside a resolver.
-    let db_schema_info = introspect(&db, &config.name).await?;
-    let warnings = validate(&ir, &db_schema_info).into_result()?;
-    for warning in warnings {
-        tracing::warn!("schema: {warning}");
-    }
-
     let limits = config.limits();
     if limits.is_unrestricted() {
         tracing::warn!(
@@ -130,28 +139,21 @@ pub async fn build_state(config: &Config) -> Result<AppState> {
         );
     }
 
-    let schema = build_schema(
-        Arc::clone(&ir),
-        db.clone(),
-        config.name.clone(),
-        limits.clone(),
-    )
-    .context("building the GraphQL schema")?;
+    let loaded = load_schema(&db, config, &limits).await?;
 
     tracing::info!(
         project = %config.name,
-        entities = ir.len(),
+        entities = loaded.ir.len(),
         "schema ready"
     );
 
-    Ok(AppState {
+    Ok(AppState::new(
         db,
-        ir,
-        db_schema: config.name.clone(),
+        config.name.clone(),
         limits,
-        batch_limit: config.batch_limit(),
-        schema: Arc::new(RwLock::new(schema)),
-    })
+        config.batch_limit(),
+        loaded,
+    ))
 }
 
 /// Build the HTTP router.

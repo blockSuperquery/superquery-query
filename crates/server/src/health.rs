@@ -77,7 +77,7 @@ pub async fn meta(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
             "blocksBehind": meta.blocks_behind(),
             "historicalStateEnabled": meta.historical_state_enabled,
             "indexerNodeVersion": meta.indexer_node_version,
-            "entities": state.ir.entities().map(|e| e.name.clone()).collect::<Vec<_>>(),
+            "entities": state.ir().entities().map(|e| e.name.clone()).collect::<Vec<_>>(),
             "queryVersion": env!("CARGO_PKG_VERSION"),
         })),
     )

@@ -19,6 +19,7 @@ pub mod graphql_http;
 pub mod graphql_ws;
 pub mod health;
 pub mod metrics;
+pub mod schema_loader;
 
 pub use app::{build_state, router, AppState};
 pub use config::Config;
