@@ -15,6 +15,7 @@ use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
+use crate::metrics::HttpMetrics;
 use crate::schema_loader::{load_schema, LoadedSchema};
 use crate::{graphql_http, health, metrics};
 
@@ -27,6 +28,8 @@ pub struct AppState {
     pub limits: Limits,
     /// Queries allowed in one batched request; `None` when unlimited.
     pub batch_limit: Option<usize>,
+    /// Request counters and latency for `/metrics`.
+    pub http: Arc<HttpMetrics>,
     /// The served schema and its IR, behind one lock so hot reload replaces
     /// both at once. `Schema` is internally reference-counted, so cloning it
     /// out per request is cheap and keeps the lock uncontended.
@@ -46,6 +49,7 @@ impl AppState {
             db_schema: db_schema.into(),
             limits,
             batch_limit,
+            http: Arc::default(),
             active: Arc::new(RwLock::new(loaded)),
         }
     }
@@ -177,6 +181,11 @@ pub fn router(state: AppState, config: &Config) -> Router {
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::GATEWAY_TIMEOUT,
             Duration::from_millis(config.query_timeout),
+        ))
+        // Outermost, so timeouts and body-limit rejections are measured too.
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            metrics::track,
         ))
         .with_state(state)
 }

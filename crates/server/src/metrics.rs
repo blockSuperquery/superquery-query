@@ -24,16 +24,61 @@
 //! a trivial schema exercises.
 
 use std::fmt::Write as _;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
-use axum::extract::State;
-use axum::http::header;
-use axum::response::IntoResponse;
-use superquery_postgres::HistogramSnapshot;
+use axum::extract::{Request, State};
+use axum::http::{header, StatusCode};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
+use superquery_postgres::{Histogram, HistogramSnapshot};
 
 use crate::app::AppState;
 
 /// Prometheus text exposition format, version 0.0.4.
 const CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
+
+/// Status classes, `1xx` through `5xx`.
+const STATUS_CLASSES: [&str; 5] = ["1xx", "2xx", "3xx", "4xx", "5xx"];
+
+/// Counters for `/graphql` requests.
+#[derive(Debug, Default)]
+pub struct HttpMetrics {
+    by_class: [AtomicU64; STATUS_CLASSES.len()],
+    latency: Histogram,
+}
+
+impl HttpMetrics {
+    pub fn record(&self, status: StatusCode, elapsed: Duration) {
+        let class = usize::from(status.as_u16() / 100).saturating_sub(1);
+        if let Some(counter) = self.by_class.get(class) {
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
+        self.latency.observe(elapsed);
+    }
+
+    pub fn count(&self, class: &str) -> u64 {
+        STATUS_CLASSES
+            .iter()
+            .position(|c| *c == class)
+            .map_or(0, |i| self.by_class[i].load(Ordering::Relaxed))
+    }
+}
+
+/// Middleware timing every `/graphql` request.
+///
+/// Installed outside the timeout layer so a 504 is counted with the time it
+/// actually took. Health checks and scrapes are left out: they would swamp
+/// the latency distribution with requests that never touch a resolver.
+pub async fn track(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    if req.uri().path() != "/graphql" {
+        return next.run(req).await;
+    }
+    let started = Instant::now();
+    let response = next.run(req).await;
+    state.http.record(response.status(), started.elapsed());
+    response
+}
 
 /// `GET /metrics`.
 pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
@@ -61,6 +106,26 @@ pub fn render(state: &AppState) -> String {
         "Entities in the schema currently being served.",
         "",
         state.ir().len() as u64,
+    );
+
+    write_header(
+        &mut out,
+        "superquery_graphql_requests_total",
+        "Requests to /graphql by HTTP status class. GraphQL-level errors are 200s.",
+        "counter",
+    );
+    for class in STATUS_CLASSES {
+        let _ = writeln!(
+            out,
+            "superquery_graphql_requests_total{{class=\"{class}\"}} {}",
+            state.http.count(class)
+        );
+    }
+    write_histogram(
+        &mut out,
+        "superquery_graphql_request_duration_seconds",
+        "Wall-clock time per /graphql request, including timeouts.",
+        &state.http.latency.snapshot(),
     );
 
     let db = state.db.stats();
@@ -164,6 +229,19 @@ mod tests {
         assert!(out.contains("x_seconds_bucket{le=\"+Inf\"} 4\n"));
         assert!(out.contains("x_seconds_sum 1.5\n"));
         assert!(out.contains("x_seconds_count 4\n"));
+    }
+
+    #[test]
+    fn requests_are_counted_by_status_class() {
+        let m = HttpMetrics::default();
+        m.record(StatusCode::OK, Duration::from_millis(3));
+        m.record(StatusCode::OK, Duration::from_millis(3));
+        m.record(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(10));
+        m.record(StatusCode::PAYLOAD_TOO_LARGE, Duration::from_millis(1));
+        assert_eq!(m.count("2xx"), 2);
+        assert_eq!(m.count("4xx"), 1);
+        assert_eq!(m.count("5xx"), 1);
+        assert_eq!(m.latency.snapshot().count, 4);
     }
 
     #[test]
