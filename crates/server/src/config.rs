@@ -103,6 +103,7 @@ impl Config {
         Limits {
             max_depth: Some(self.query_depth_limit),
             max_complexity: Some(self.query_complexity),
+            max_aliases: Limits::default().max_aliases,
             max_page_size: self.query_limit,
             default_page_size: superquery_query_core::DEFAULT_PAGE_SIZE.min(self.query_limit),
             timeout: Duration::from_millis(self.query_timeout),
