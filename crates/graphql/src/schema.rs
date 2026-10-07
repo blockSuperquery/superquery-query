@@ -38,6 +38,7 @@ use superquery_query_core::{
 
 use crate::context::QueryContext;
 use crate::limits::Limits;
+use crate::loader::EntityKey;
 use crate::{filters, naming, ordering, scalars};
 
 /// A resolved page, passed from the collection resolver to the connection fields.
@@ -140,9 +141,9 @@ fn scalar_field(field: &superquery_query_core::SchemaField, scalar: ScalarType) 
 
 /// A foreign key: fetch the referenced row by the id stored in this column.
 ///
-/// One statement per parent row today. Milestone 8 replaces this with a
-/// DataLoader over `sql::select_by_ids`, which already exists — batching all the
-/// ids a layer needs into a single `WHERE id = ANY($1)`.
+/// Goes through the [`EntityLoader`](crate::loader::EntityLoader), so every
+/// parent in a page shares one `WHERE id = ANY($1)` instead of issuing its own
+/// statement.
 fn relation_field(field: &superquery_query_core::SchemaField, target: &str) -> Field {
     let name = field.name.clone();
     let target = target.to_string();
@@ -161,20 +162,13 @@ fn relation_field(field: &superquery_query_core::SchemaField, target: &str) -> F
             };
 
             let qctx = ctx.data::<QueryContext>()?;
-            let entity = lookup_entity(&qctx.ir, &target)?;
-            let (query, fields) = sql::select_by_id(&qctx.db_schema, entity, id).map_err(to_gql)?;
-            let rows = qctx
-                .db
-                .query(&query.sql, &query.params_as_refs())
+            let loaded = qctx
+                .entities
+                .load_one(EntityKey::new(target, id))
                 .await
                 .map_err(to_gql)?;
 
-            match rows.first() {
-                Some(r) => Ok(Some(FieldValue::owned_any(
-                    decode_row(r, &fields).map_err(to_gql)?,
-                ))),
-                None => Ok(None),
-            }
+            Ok(loaded.map(FieldValue::owned_any))
         })
     })
 }
